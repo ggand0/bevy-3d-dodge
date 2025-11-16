@@ -29,13 +29,16 @@ fn spawn_player(
     config: Res<GameConfig>,
 ) {
     commands.spawn((
-        PbrBundle {
-            mesh: meshes.add(Capsule3d::new(0.5, 1.0)),
-            material: materials.add(Color::srgb(0.2, 0.5, 0.9)),
-            transform: Transform::from_xyz(0.0, 0.0, config.player_start_height)
-                .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+        Mesh3d(meshes.add(Capsule3d::new(0.5, 1.0))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::srgb(0.2, 0.5, 0.9),
+            perceptual_roughness: 0.4, // Smooth plastic/jersey material
+            metallic: 0.0,
+            reflectance: 0.4, // Slight reflectance for synthetic fabric
             ..default()
-        },
+        })),
+        Transform::from_xyz(0.0, 0.0, config.player_start_height)
+            .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
         Player,
         Velocity(Vec2::ZERO),
         VerticalVelocity(0.0),
@@ -104,8 +107,8 @@ fn apply_velocity(
     let y_bound = zone_depth / 2.0;  // ±4.0
 
     for (mut transform, velocity) in query.iter_mut() {
-        transform.translation.x += velocity.0.x * time.delta_seconds();
-        transform.translation.y += velocity.0.y * time.delta_seconds();
+        transform.translation.x += velocity.0.x * time.delta_secs();
+        transform.translation.y += velocity.0.y * time.delta_secs();
 
         // Clamp player position to play zone bounds
         transform.translation.x = transform.translation.x.clamp(-x_bound, x_bound);
@@ -119,7 +122,7 @@ fn apply_gravity(
     config: Res<GameConfig>,
 ) {
     let gravity = 20.0; // Gravity acceleration
-    let dt = time.delta_seconds();
+    let dt = time.delta_secs();
 
     for (mut transform, mut v_vel, mut on_ground) in query.iter_mut() {
         // Apply gravity

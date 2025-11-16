@@ -27,18 +27,18 @@ fn setup_scene(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // Ground plane (Isaac Sim style)
-    commands.spawn(PbrBundle {
-        mesh: meshes.add(Mesh::from(Rectangle::new(50.0, 50.0))),
-        material: materials.add(StandardMaterial {
+    commands.spawn((
+        Mesh3d(meshes.add(Mesh::from(Rectangle::new(50.0, 50.0)))),
+        MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Color::srgb(0.40, 0.60, 0.90), // More blue
-            perceptual_roughness: 0.8,
+            perceptual_roughness: 0.85, // Slightly rough concrete/gym floor
             metallic: 0.0,
+            reflectance: 0.35, // Moderate reflectance for indoor floor
             cull_mode: None,
             ..default()
-        }),
-        transform: Transform::from_xyz(0.0, 0.0, 0.0),
-        ..default()
-    });
+        })),
+        Transform::from_xyz(0.0, 0.0, 0.0),
+    ));
 
     // Create grid lines using thin boxes
     let grid_size = 50;
@@ -47,45 +47,45 @@ fn setup_scene(
     let line_height = 0.001;
 
     let grid_material = materials.add(StandardMaterial {
-        base_color: Color::srgba(1.0, 1.0, 1.0, 0.5), // White grid lines
+        base_color: Color::srgba(1.0, 1.0, 1.0, 0.6), // White grid lines, slightly more visible
         alpha_mode: AlphaMode::Blend,
-        perceptual_roughness: 0.9,
+        perceptual_roughness: 0.95, // Very rough for painted lines
         metallic: 0.0,
+        reflectance: 0.1, // Minimal reflectance for matte paint
         ..default()
     });
 
     // Create grid lines parallel to X axis
     for i in -(grid_size / 2)..=(grid_size / 2) {
         let y = i as f32 * grid_spacing;
-        commands.spawn(PbrBundle {
-            mesh: meshes.add(Cuboid::new(grid_size as f32, line_thickness, line_height)),
-            material: grid_material.clone(),
-            transform: Transform::from_xyz(0.0, y, line_height / 2.0),
-            ..default()
-        });
+        commands.spawn((
+            Mesh3d(meshes.add(Cuboid::new(grid_size as f32, line_thickness, line_height))),
+            MeshMaterial3d(grid_material.clone()),
+            Transform::from_xyz(0.0, y, line_height / 2.0),
+        ));
     }
 
     // Create grid lines parallel to Y axis
     for i in -(grid_size / 2)..=(grid_size / 2) {
         let x = i as f32 * grid_spacing;
-        commands.spawn(PbrBundle {
-            mesh: meshes.add(Cuboid::new(line_thickness, grid_size as f32, line_height)),
-            material: grid_material.clone(),
-            transform: Transform::from_xyz(x, 0.0, line_height / 2.0),
-            ..default()
-        });
+        commands.spawn((
+            Mesh3d(meshes.add(Cuboid::new(line_thickness, grid_size as f32, line_height))),
+            MeshMaterial3d(grid_material.clone()),
+            Transform::from_xyz(x, 0.0, line_height / 2.0),
+        ));
     }
 
     // Softer directional light for subtle shadows (mimics skylights/windows)
-    commands.spawn(DirectionalLightBundle {
-        directional_light: DirectionalLight {
+    commands.spawn((
+        DirectionalLight {
             illuminance: 5000.0, // Further reduced since we'll add point lights
             shadows_enabled: true,
+            shadow_depth_bias: 0.02, // Prevents shadow acne
+            shadow_normal_bias: 0.6, // Prevents peter-panning artifacts
             ..default()
         },
-        transform: Transform::from_xyz(15.0, -10.0, 25.0).looking_at(Vec3::ZERO, Vec3::Z),
-        ..default()
-    });
+        Transform::from_xyz(15.0, -10.0, 25.0).looking_at(Vec3::ZERO, Vec3::Z),
+    ));
 
     // Multiple point lights to simulate ceiling-mounted gym lights
     let light_height = 8.0;
@@ -98,8 +98,8 @@ fn setup_scene(
     ];
 
     for pos in light_positions.iter() {
-        commands.spawn(PointLightBundle {
-            point_light: PointLight {
+        commands.spawn((
+            PointLight {
                 intensity: 800000.0, // Bright ceiling lights
                 color: Color::srgb(1.0, 0.98, 0.95), // Warm white
                 radius: 20.0,
@@ -107,15 +107,14 @@ fn setup_scene(
                 shadows_enabled: false, // Disable for performance, directional light handles shadows
                 ..default()
             },
-            transform: Transform::from_translation(*pos),
-            ..default()
-        });
+            Transform::from_translation(*pos),
+        ));
     }
 
     // Ambient light (now lower since we have point lights)
     commands.insert_resource(AmbientLight {
         color: Color::srgb(0.9, 0.9, 0.95), // Slightly cool ambient
-        brightness: 150.0, // Reduced since point lights provide main illumination
+        brightness: 120.0, // Further reduced for better contrast with PBR materials
     });
 
     // Play zone marker (dodgeball court)
@@ -133,36 +132,32 @@ fn setup_scene(
     });
 
     // Front line (toward where projectiles come from, +Y side)
-    commands.spawn(PbrBundle {
-        mesh: meshes.add(Cuboid::new(zone_width, zone_line_thickness, zone_line_height)),
-        material: zone_material.clone(),
-        transform: Transform::from_xyz(0.0, zone_depth / 2.0, zone_line_height / 2.0),
-        ..default()
-    });
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(zone_width, zone_line_thickness, zone_line_height))),
+        MeshMaterial3d(zone_material.clone()),
+        Transform::from_xyz(0.0, zone_depth / 2.0, zone_line_height / 2.0),
+    ));
 
     // Back line (-Y side)
-    commands.spawn(PbrBundle {
-        mesh: meshes.add(Cuboid::new(zone_width, zone_line_thickness, zone_line_height)),
-        material: zone_material.clone(),
-        transform: Transform::from_xyz(0.0, -zone_depth / 2.0, zone_line_height / 2.0),
-        ..default()
-    });
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(zone_width, zone_line_thickness, zone_line_height))),
+        MeshMaterial3d(zone_material.clone()),
+        Transform::from_xyz(0.0, -zone_depth / 2.0, zone_line_height / 2.0),
+    ));
 
     // Left line (-X side)
-    commands.spawn(PbrBundle {
-        mesh: meshes.add(Cuboid::new(zone_line_thickness, zone_depth, zone_line_height)),
-        material: zone_material.clone(),
-        transform: Transform::from_xyz(-zone_width / 2.0, 0.0, zone_line_height / 2.0),
-        ..default()
-    });
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(zone_line_thickness, zone_depth, zone_line_height))),
+        MeshMaterial3d(zone_material.clone()),
+        Transform::from_xyz(-zone_width / 2.0, 0.0, zone_line_height / 2.0),
+    ));
 
     // Right line (+X side)
-    commands.spawn(PbrBundle {
-        mesh: meshes.add(Cuboid::new(zone_line_thickness, zone_depth, zone_line_height)),
-        material: zone_material.clone(),
-        transform: Transform::from_xyz(zone_width / 2.0, 0.0, zone_line_height / 2.0),
-        ..default()
-    });
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(zone_line_thickness, zone_depth, zone_line_height))),
+        MeshMaterial3d(zone_material.clone()),
+        Transform::from_xyz(zone_width / 2.0, 0.0, zone_line_height / 2.0),
+    ));
 
     // Coordinate axes visualization (hidden by default, shown in debug mode)
     let axis_length = 5.0;
@@ -171,160 +166,136 @@ fn setup_scene(
 
     // X axis (Red) - pointing in +X direction
     commands.spawn((
-        PbrBundle {
-        mesh: meshes.add(Cuboid::new(axis_length, axis_thickness, axis_thickness)),
-        material: materials.add(StandardMaterial {
+        Mesh3d(meshes.add(Cuboid::new(axis_length, axis_thickness, axis_thickness))),
+        MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Color::srgb(1.0, 0.0, 0.0),
             emissive: Color::srgb(0.5, 0.0, 0.0).into(),
             unlit: true,
             ..default()
-        }),
-        transform: Transform::from_xyz(axis_length / 2.0, 0.0, 0.1),
-        visibility: Visibility::Hidden,
-        ..default()
-    },
+        })),
+        Transform::from_xyz(axis_length / 2.0, 0.0, 0.1),
+        Visibility::Hidden,
         CoordinateAxis,
     ));
     // X axis arrow head
     commands.spawn((
-        PbrBundle {
-        mesh: meshes.add(Cuboid::new(arrow_head_size, arrow_head_size * 2.0, arrow_head_size)),
-        material: materials.add(StandardMaterial {
+        Mesh3d(meshes.add(Cuboid::new(arrow_head_size, arrow_head_size * 2.0, arrow_head_size))),
+        MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Color::srgb(1.0, 0.0, 0.0),
             emissive: Color::srgb(0.5, 0.0, 0.0).into(),
             unlit: true,
             ..default()
-        }),
-        transform: Transform::from_xyz(axis_length + arrow_head_size / 2.0, 0.0, 0.1)
+        })),
+        Transform::from_xyz(axis_length + arrow_head_size / 2.0, 0.0, 0.1)
             .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_4)),
-        visibility: Visibility::Hidden,
-        ..default()
-    },
+        Visibility::Hidden,
         CoordinateAxis,
     ));
 
     // Y axis (Green) - pointing in +Y direction
     commands.spawn((
-        PbrBundle {
-        mesh: meshes.add(Cuboid::new(axis_thickness, axis_length, axis_thickness)),
-        material: materials.add(StandardMaterial {
+        Mesh3d(meshes.add(Cuboid::new(axis_thickness, axis_length, axis_thickness))),
+        MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Color::srgb(0.0, 1.0, 0.0),
             emissive: Color::srgb(0.0, 0.5, 0.0).into(),
             unlit: true,
             ..default()
-        }),
-        transform: Transform::from_xyz(0.0, axis_length / 2.0, 0.1),
-        visibility: Visibility::Hidden,
-        ..default()
-    },
+        })),
+        Transform::from_xyz(0.0, axis_length / 2.0, 0.1),
+        Visibility::Hidden,
         CoordinateAxis,
     ));
     // Y axis arrow head
     commands.spawn((
-        PbrBundle {
-        mesh: meshes.add(Cuboid::new(arrow_head_size * 2.0, arrow_head_size, arrow_head_size)),
-        material: materials.add(StandardMaterial {
+        Mesh3d(meshes.add(Cuboid::new(arrow_head_size * 2.0, arrow_head_size, arrow_head_size))),
+        MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Color::srgb(0.0, 1.0, 0.0),
             emissive: Color::srgb(0.0, 0.5, 0.0).into(),
             unlit: true,
             ..default()
-        }),
-        transform: Transform::from_xyz(0.0, axis_length + arrow_head_size / 2.0, 0.1)
+        })),
+        Transform::from_xyz(0.0, axis_length + arrow_head_size / 2.0, 0.1)
             .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_4)),
-        visibility: Visibility::Hidden,
-        ..default()
-    },
+        Visibility::Hidden,
         CoordinateAxis,
     ));
 
     // Z axis (Blue) - pointing in +Z direction
     commands.spawn((
-        PbrBundle {
-        mesh: meshes.add(Cuboid::new(axis_thickness, axis_thickness, axis_length)),
-        material: materials.add(StandardMaterial {
+        Mesh3d(meshes.add(Cuboid::new(axis_thickness, axis_thickness, axis_length))),
+        MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Color::srgb(0.0, 0.0, 1.0),
             emissive: Color::srgb(0.0, 0.0, 0.5).into(),
             unlit: true,
             ..default()
-        }),
-        transform: Transform::from_xyz(0.0, 0.0, axis_length / 2.0),
-        visibility: Visibility::Hidden,
-        ..default()
-    },
+        })),
+        Transform::from_xyz(0.0, 0.0, axis_length / 2.0),
+        Visibility::Hidden,
         CoordinateAxis,
     ));
     // Z axis arrow head (cone-like)
     commands.spawn((
-        PbrBundle {
-        mesh: meshes.add(Cuboid::new(arrow_head_size, arrow_head_size, arrow_head_size * 2.0)),
-        material: materials.add(StandardMaterial {
+        Mesh3d(meshes.add(Cuboid::new(arrow_head_size, arrow_head_size, arrow_head_size * 2.0))),
+        MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Color::srgb(0.0, 0.0, 1.0),
             emissive: Color::srgb(0.0, 0.0, 0.5).into(),
             unlit: true,
             ..default()
-        }),
-        transform: Transform::from_xyz(0.0, 0.0, axis_length + arrow_head_size),
-        visibility: Visibility::Hidden,
-        ..default()
-    },
+        })),
+        Transform::from_xyz(0.0, 0.0, axis_length + arrow_head_size),
+        Visibility::Hidden,
         CoordinateAxis,
     ));
 
     // UI Text
-    commands.spawn(
-        TextBundle::from_section(
-            "WASD: Move | Space: Jump | R: Reset | F1: Camera Debug | ESC: Quit",
-            TextStyle {
-                font_size: 20.0,
-                color: Color::WHITE,
-                ..default()
-            },
-        )
-        .with_style(Style {
+    commands.spawn((
+        Text::new("WASD: Move | Space: Jump | R: Reset | F1: Camera Debug | ESC: Quit"),
+        TextFont {
+            font_size: 20.0,
+            ..default()
+        },
+        TextColor(Color::WHITE),
+        Node {
             position_type: PositionType::Absolute,
             top: Val::Px(10.0),
             left: Val::Px(10.0),
             ..default()
-        }),
-    );
+        },
+    ));
 
     // Camera debug help text (initially hidden)
     commands.spawn((
-        TextBundle::from_section(
-            "Camera Debug: MMB+Drag: Pan | Scroll: Zoom | RMB+Drag: Look | UO: Up/Down",
-            TextStyle {
-                font_size: 16.0,
-                color: Color::srgb(1.0, 1.0, 0.0),
-                ..default()
-            },
-        )
-        .with_style(Style {
+        Text::new("Camera Debug: MMB+Drag: Pan | Scroll: Zoom | RMB+Drag: Look | UO: Up/Down"),
+        TextFont {
+            font_size: 16.0,
+            ..default()
+        },
+        TextColor(Color::srgb(1.0, 1.0, 0.0)),
+        Node {
             position_type: PositionType::Absolute,
             top: Val::Px(35.0),
             left: Val::Px(10.0),
             display: Display::None,
             ..default()
-        }),
+        },
         CameraDebugText,
     ));
 
     // Game over text (initially hidden)
     commands.spawn((
-        TextBundle::from_section(
-            "GAME OVER! Press R to restart",
-            TextStyle {
-                font_size: 40.0,
-                color: Color::srgb(1.0, 0.2, 0.2),
-                ..default()
-            },
-        )
-        .with_style(Style {
+        Text::new("GAME OVER! Press R to restart"),
+        TextFont {
+            font_size: 40.0,
+            ..default()
+        },
+        TextColor(Color::srgb(1.0, 0.2, 0.2)),
+        Node {
             position_type: PositionType::Absolute,
             top: Val::Px(300.0),
             left: Val::Px(400.0),
             display: Display::None,
             ..default()
-        }),
+        },
         GameOverText,
     ));
 }
@@ -341,20 +312,20 @@ struct CoordinateAxis;
 fn update_ui(
     game_state: Res<game::collision::GameState>,
     debug_mode: Res<game::camera::CameraDebugMode>,
-    mut game_over_query: Query<&mut Style, (With<GameOverText>, Without<CameraDebugText>)>,
-    mut debug_text_query: Query<&mut Style, (With<CameraDebugText>, Without<GameOverText>)>,
+    mut game_over_query: Query<&mut Node, (With<GameOverText>, Without<CameraDebugText>)>,
+    mut debug_text_query: Query<&mut Node, (With<CameraDebugText>, Without<GameOverText>)>,
     mut axis_query: Query<&mut Visibility, With<CoordinateAxis>>,
 ) {
-    if let Ok(mut style) = game_over_query.get_single_mut() {
-        style.display = if game_state.is_game_over {
+    if let Ok(mut node) = game_over_query.get_single_mut() {
+        node.display = if game_state.is_game_over {
             Display::Flex
         } else {
             Display::None
         };
     }
 
-    if let Ok(mut style) = debug_text_query.get_single_mut() {
-        style.display = if debug_mode.enabled {
+    if let Ok(mut node) = debug_text_query.get_single_mut() {
+        node.display = if debug_mode.enabled {
             Display::Flex
         } else {
             Display::None
@@ -380,7 +351,7 @@ fn handle_reset(
             &mut game::player::Velocity,
             &mut game::player::VerticalVelocity,
             &mut game::player::OnGround,
-            &Handle<StandardMaterial>,
+            &MeshMaterial3d<StandardMaterial>,
         ),
         With<game::player::Player>,
     >,
@@ -401,7 +372,7 @@ fn handle_reset(
             on_ground.0 = true;
 
             // Reset player color
-            if let Some(material) = materials.get_mut(&*material_handle) {
+            if let Some(material) = materials.get_mut(&material_handle.0) {
                 material.base_color = Color::srgb(0.2, 0.5, 0.9);
             }
         }

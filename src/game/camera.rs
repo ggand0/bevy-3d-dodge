@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
+use bevy::render::camera::{Exposure, PhysicalCameraParameters};
 
 #[derive(Component)]
 pub struct DebugCamera;
@@ -27,11 +28,19 @@ impl Plugin for CameraPlugin {
 
 fn spawn_camera(mut commands: Commands) {
     commands.spawn((
-        Camera3dBundle {
-            transform: Transform::from_xyz(0.0, -15.0, 10.0)
-                .looking_at(Vec3::new(0.0, 0.0, 1.0), Vec3::Z),
+        Camera3d::default(),
+        Camera {
+            hdr: true, // Enable HDR for better lighting range
             ..default()
         },
+        Exposure::from_physical_camera(PhysicalCameraParameters {
+            aperture_f_stops: 8.0,        // f/8 aperture (common for indoor sports)
+            shutter_speed_s: 1.0 / 125.0, // 1/125s shutter (freezes motion)
+            sensitivity_iso: 400.0,        // ISO 400 (good for indoor gym lighting)
+            sensor_height: 0.01866,        // Standard full-frame sensor
+        }),
+        Transform::from_xyz(0.0, -15.0, 10.0)
+            .looking_at(Vec3::new(0.0, 0.0, 1.0), Vec3::Z),
         DebugCamera,
     ));
 }
@@ -64,7 +73,7 @@ fn debug_camera_controls(
         let mouse_sensitivity = 0.003;
         let pan_sensitivity = 0.05;
         let zoom_sensitivity = 1.0;
-        let dt = time.delta_seconds();
+        let dt = time.delta_secs();
 
         // Mouse wheel zoom (scroll)
         for wheel in mouse_wheel.read() {

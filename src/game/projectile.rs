@@ -69,12 +69,15 @@ fn spawn_projectiles(
             let vz = (dz + 0.5 * gravity * flight_time * flight_time) / flight_time;
 
             commands.spawn((
-                PbrBundle {
-                    mesh: meshes.add(Sphere::new(0.3)),
-                    material: materials.add(Color::srgb(0.9, 0.2, 0.2)),
-                    transform: Transform::from_xyz(spawn_x, spawn_y, spawn_z),
+                Mesh3d(meshes.add(Sphere::new(0.3))),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: Color::srgb(0.9, 0.2, 0.2),
+                    perceptual_roughness: 0.3, // Smooth rubber ball
+                    metallic: 0.0,
+                    reflectance: 0.45, // Good reflectance for rubber
                     ..default()
-                },
+                })),
+                Transform::from_xyz(spawn_x, spawn_y, spawn_z),
                 Projectile,
                 ProjectileVelocity(Vec3::new(vx, vy, vz)),
             ));
@@ -87,7 +90,7 @@ fn move_projectiles(
     time: Res<Time>,
 ) {
     let gravity = 9.8;
-    let dt = time.delta_seconds();
+    let dt = time.delta_secs();
     let ground_level = 0.3; // Sphere radius to keep ball on surface
     let restitution = 0.7; // Bounce coefficient (0.7 = loses 30% energy per bounce)
 

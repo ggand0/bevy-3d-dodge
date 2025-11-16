@@ -77,7 +77,7 @@ fn check_out_of_bounds(
 fn handle_collisions(
     mut collision_events: EventReader<CollisionEvent>,
     mut game_state: ResMut<GameState>,
-    mut player_query: Query<&mut Handle<StandardMaterial>, With<Player>>,
+    mut player_query: Query<&MeshMaterial3d<StandardMaterial>, With<Player>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     for _ in collision_events.read() {
@@ -86,7 +86,7 @@ fn handle_collisions(
 
             // Change player color to indicate game over
             if let Ok(material_handle) = player_query.get_single_mut() {
-                if let Some(material) = materials.get_mut(&*material_handle) {
+                if let Some(material) = materials.get_mut(&material_handle.0) {
                     material.base_color = Color::srgb(0.8, 0.1, 0.1);
                 }
             }
