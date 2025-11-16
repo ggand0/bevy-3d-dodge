@@ -26,22 +26,17 @@ fn setup_scene(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // Ground plane with Isaac Sim-style grid
-    // Create a light blue ground with white grid lines
-    // Plane3d by default faces up in Z, but we want it in the XY plane at z=0
-    // So we DON'T rotate it - Bevy's Plane3d already has normal pointing up in +Z
+    // Ground plane (Isaac Sim style)
     commands.spawn(PbrBundle {
         mesh: meshes.add(Mesh::from(Rectangle::new(50.0, 50.0))),
         material: materials.add(StandardMaterial {
-            base_color: Color::srgb(0.45, 0.65, 0.85), // Isaac Sim-style light blue
-            emissive: Color::srgb(0.45, 0.65, 0.85).into(), // Self-illuminated for consistent color
-            perceptual_roughness: 0.9,
+            base_color: Color::srgb(0.40, 0.60, 0.90), // More blue
+            perceptual_roughness: 0.8,
             metallic: 0.0,
-            unlit: true, // Unlit for consistent bright color
-            cull_mode: None, // Render both sides
+            cull_mode: None,
             ..default()
         }),
-        transform: Transform::from_xyz(0.0, 0.0, 0.0), // At ground level (z=0)
+        transform: Transform::from_xyz(0.0, 0.0, 0.0),
         ..default()
     });
 
@@ -52,7 +47,7 @@ fn setup_scene(
     let line_height = 0.001;
 
     let grid_material = materials.add(StandardMaterial {
-        base_color: Color::srgba(1.0, 1.0, 1.0, 0.3), // White with some transparency
+        base_color: Color::srgba(1.0, 1.0, 1.0, 0.5), // White grid lines
         alpha_mode: AlphaMode::Blend,
         perceptual_roughness: 0.9,
         metallic: 0.0,
@@ -81,21 +76,21 @@ fn setup_scene(
         });
     }
 
-    // Directional light (raised higher for better brightness, shadows disabled for cleaner look)
+    // Directional light with shadows for depth perception (from +X, -Y region)
     commands.spawn(DirectionalLightBundle {
         directional_light: DirectionalLight {
             illuminance: 15000.0,
-            shadows_enabled: false, // Disable shadows for cleaner look
+            shadows_enabled: true,
             ..default()
         },
-        transform: Transform::from_xyz(10.0, 10.0, 25.0).looking_at(Vec3::ZERO, Vec3::Z),
+        transform: Transform::from_xyz(15.0, -10.0, 25.0).looking_at(Vec3::ZERO, Vec3::Z),
         ..default()
     });
 
-    // Ambient light (increased for better visibility)
+    // Ambient light (moderate brightness to preserve shadow contrast)
     commands.insert_resource(AmbientLight {
         color: Color::WHITE,
-        brightness: 500.0,
+        brightness: 300.0,
     });
 
     // Play zone marker (dodgeball court)
