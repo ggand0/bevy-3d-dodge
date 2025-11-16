@@ -78,7 +78,7 @@ fn setup_scene(
     // Softer directional light for subtle shadows (mimics skylights/windows)
     commands.spawn((
         DirectionalLight {
-            illuminance: 5000.0, // Further reduced since we'll add point lights
+            illuminance: 10000.0, // Increased for brighter scene
             shadows_enabled: true,
             shadow_depth_bias: 0.02, // Prevents shadow acne
             shadow_normal_bias: 0.6, // Prevents peter-panning artifacts
@@ -100,10 +100,10 @@ fn setup_scene(
     for pos in light_positions.iter() {
         commands.spawn((
             PointLight {
-                intensity: 800000.0, // Bright ceiling lights
+                intensity: 1200000.0, // Increased for brighter gym lighting
                 color: Color::srgb(1.0, 0.98, 0.95), // Warm white
                 radius: 20.0,
-                range: 25.0,
+                range: 30.0, // Increased range for better coverage
                 shadows_enabled: false, // Disable for performance, directional light handles shadows
                 ..default()
             },
@@ -113,8 +113,8 @@ fn setup_scene(
 
     // Ambient light (now lower since we have point lights)
     commands.insert_resource(AmbientLight {
-        color: Color::srgb(0.9, 0.9, 0.95), // Slightly cool ambient
-        brightness: 120.0, // Further reduced for better contrast with PBR materials
+        color: Color::srgb(0.95, 0.95, 1.0), // Brighter cool ambient
+        brightness: 250.0, // Increased for overall brighter scene
     });
 
     // Play zone marker (dodgeball court)

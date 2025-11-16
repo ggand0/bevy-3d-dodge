@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
+use bevy::core_pipeline::Skybox;
 use bevy::render::camera::{Exposure, PhysicalCameraParameters};
 
 #[derive(Component)]
@@ -26,7 +27,14 @@ impl Plugin for CameraPlugin {
     }
 }
 
-fn spawn_camera(mut commands: Commands) {
+fn spawn_camera(mut commands: Commands, asset_server: Res<AssetServer>) {
+    // Load environment map texture (using specular map for skybox since it's sharper)
+    let skybox_handle = asset_server.load("textures/pisa_specular_rgb9e5_zstd.ktx2");
+
+    // Rotation to convert from Y-up (typical for graphics) to Z-up (our scene)
+    // Rotate +90 degrees around X axis to align sky with +Z direction
+    let env_rotation = Quat::from_rotation_x(std::f32::consts::FRAC_PI_2);
+
     commands.spawn((
         Camera3d::default(),
         Camera {
@@ -41,6 +49,20 @@ fn spawn_camera(mut commands: Commands) {
         }),
         Transform::from_xyz(0.0, -15.0, 10.0)
             .looking_at(Vec3::new(0.0, 0.0, 1.0), Vec3::Z),
+        // Skybox - visible background environment
+        Skybox {
+            image: skybox_handle.clone(),
+            brightness: 500.0, // Moderate brightness for indoor setting
+            rotation: env_rotation,
+            ..default()
+        },
+        // Environment map for realistic ambient lighting and reflections
+        EnvironmentMapLight {
+            diffuse_map: asset_server.load("textures/pisa_diffuse_rgb9e5_zstd.ktx2"),
+            specular_map: skybox_handle,
+            intensity: 300.0, // Moderate intensity for indoor gym setting
+            rotation: env_rotation,
+        },
         DebugCamera,
     ));
 }
