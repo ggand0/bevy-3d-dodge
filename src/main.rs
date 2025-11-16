@@ -263,9 +263,9 @@ fn setup_scene(
         },
     ));
 
-    // Camera debug help text (initially hidden)
+    // Camera debug help text (now shown by default)
     commands.spawn((
-        Text::new("Camera Debug: MMB+Drag: Pan | Scroll: Zoom | RMB+Drag: Look | UO: Up/Down"),
+        Text::new("Camera: LMB+Drag: Rotate | MMB+Drag: Pan | Scroll: Zoom | UO: Up/Down"),
         TextFont {
             font_size: 16.0,
             ..default()
@@ -275,7 +275,6 @@ fn setup_scene(
             position_type: PositionType::Absolute,
             top: Val::Px(35.0),
             left: Val::Px(10.0),
-            display: Display::None,
             ..default()
         },
         CameraDebugText,
@@ -324,12 +323,9 @@ fn update_ui(
         };
     }
 
+    // Camera help text is always visible now since camera controls are enabled by default
     if let Ok(mut node) = debug_text_query.get_single_mut() {
-        node.display = if debug_mode.enabled {
-            Display::Flex
-        } else {
-            Display::None
-        };
+        node.display = Display::Flex;
     }
 
     // Toggle coordinate axes visibility based on debug mode

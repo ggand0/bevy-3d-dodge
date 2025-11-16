@@ -13,7 +13,7 @@ pub struct CameraDebugMode {
 
 impl Default for CameraDebugMode {
     fn default() -> Self {
-        Self { enabled: false }
+        Self { enabled: true }
     }
 }
 
@@ -95,37 +95,50 @@ fn debug_camera_controls(
         let zoom_sensitivity = 1.0;
         let dt = time.delta_secs();
 
-        // Mouse wheel zoom (scroll)
+        // Mouse wheel scroll for zoom (forward/backward movement)
         for wheel in mouse_wheel.read() {
-            let zoom = wheel.y * zoom_sensitivity;
+            let zoom_amount = wheel.y * zoom_sensitivity;
             let forward = transform.forward();
-            transform.translation += forward * zoom;
+            transform.translation += forward * zoom_amount;
         }
 
-        // Middle mouse button drag for panning
+        // Middle mouse button drag for XY plane panning
         if mouse_button.pressed(MouseButton::Middle) {
             for motion in mouse_motion.read() {
                 let pan_x = -motion.delta.x * pan_sensitivity;
                 let pan_y = motion.delta.y * pan_sensitivity;
 
-                // Pan left/right and up/down in camera space
+                // Pan in camera's right direction (X) and world up direction (Z for vertical)
                 let right = transform.right();
                 transform.translation += right * pan_x;
                 transform.translation += Vec3::Z * pan_y;
             }
         }
 
-        // Right mouse button drag for rotation
-        if mouse_button.pressed(MouseButton::Right) {
+        // Left mouse button drag for orbit rotation around play zone center
+        if mouse_button.pressed(MouseButton::Left) {
             for motion in mouse_motion.read() {
-                let yaw = -motion.delta.x * mouse_sensitivity;
-                let pitch = -motion.delta.y * mouse_sensitivity;
+                let orbit_center = Vec3::new(0.0, 0.0, 1.0); // Center of play zone at ground level
+                let orbit_sensitivity = 0.005;
 
-                // Rotate around Z axis (yaw)
-                transform.rotate_z(yaw);
+                let yaw = -motion.delta.x * orbit_sensitivity;
+                let pitch = -motion.delta.y * orbit_sensitivity;
 
-                // Rotate around local X axis (pitch)
-                transform.rotate_local_x(pitch);
+                // Calculate vector from orbit center to camera
+                let offset = transform.translation - orbit_center;
+
+                // Apply yaw rotation (around Z axis) at orbit center
+                let yaw_rotation = Quat::from_rotation_z(yaw);
+                let rotated_offset = yaw_rotation * offset;
+
+                // Apply pitch rotation (around camera's right axis at orbit center)
+                let right = transform.right();
+                let pitch_rotation = Quat::from_axis_angle(*right, pitch);
+                let final_offset = pitch_rotation * rotated_offset;
+
+                // Update camera position and make it look at the orbit center
+                transform.translation = orbit_center + final_offset;
+                transform.look_at(orbit_center, Vec3::Z);
             }
         }
 
