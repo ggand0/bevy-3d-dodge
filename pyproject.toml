@@ -13,9 +13,11 @@ dependencies = [
 [project.optional-dependencies]
 train = [
     "torch>=2.4.0",
+    "pytorch-triton-rocm>=3.2.0",
     "stable-baselines3>=2.3.0",
     "tensorboard>=2.20.0",
     "tqdm>=4.65.0",
+    "rich>=13.0.0",
 ]
 dev = [
     "pytest>=7.4.0",
@@ -39,3 +41,16 @@ python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-rocm" },
+]
+pytorch-triton-rocm = [
+    { index = "pytorch-rocm" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-rocm"
+url = "https://download.pytorch.org/whl/rocm6.4"
+explicit = true
