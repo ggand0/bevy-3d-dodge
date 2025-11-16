@@ -12,6 +12,7 @@ Usage:
 
 import argparse
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -32,22 +33,39 @@ def make_env(port: int) -> gym.Env:
     return env
 
 
-def train(config: DQNConfig, verbose: int = 1) -> None:
+def train(config: DQNConfig, config_name: Optional[str] = None, verbose: int = 1) -> None:
     """Train DQN agent on Bevy dodge game.
 
     Args:
         config: DQNConfig instance with all hyperparameters
+        config_name: Name of config file (used for organizing results)
         verbose: Verbosity level
     """
-    # Create directories
-    save_path = Path(config.save_dir)
-    log_path = Path(config.log_dir)
+    # Create timestamped run directory
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Determine config name for directory structure
+    if config_name:
+        # Extract filename without extension (e.g., "default" from "python/configs/default.yaml")
+        config_basename = Path(config_name).stem
+        run_dir = Path("results") / config_basename / timestamp
+    else:
+        # No config file specified, use "cli" as name
+        run_dir = Path("results") / "cli" / timestamp
+
+    # Create subdirectories for models and logs
+    save_path = run_dir / "models"
+    log_path = run_dir / "logs"
     save_path.mkdir(parents=True, exist_ok=True)
     log_path.mkdir(parents=True, exist_ok=True)
 
     print("=" * 70)
     print("DQN Training - Bevy 3D Dodge Game")
     print("=" * 70)
+    print(f"Run directory:       {run_dir}")
+    print(f"Config:              {config_name if config_name else 'CLI arguments'}")
+    print(f"Timestamp:           {timestamp}")
+    print()
     print(f"Total timesteps:     {config.total_timesteps:,}")
     print(f"Learning rate:       {config.learning_rate}")
     print(f"Buffer size:         {config.buffer_size:,}")
@@ -55,8 +73,9 @@ def train(config: DQNConfig, verbose: int = 1) -> None:
     print(f"Gamma:               {config.gamma}")
     print(f"Exploration:         {config.exploration_initial_eps} → {config.exploration_final_eps}")
     print(f"Network arch:        {config.net_arch if config.net_arch else '[64, 64] (default)'}")
-    print(f"Save directory:      {save_path}")
-    print(f"Log directory:       {log_path}")
+    print()
+    print(f"Models saved to:     {save_path}")
+    print(f"Logs saved to:       {log_path}")
     print()
 
     # Create environment
@@ -126,8 +145,12 @@ def train(config: DQNConfig, verbose: int = 1) -> None:
 
     callbacks = [checkpoint_callback, eval_callback]
 
+    # Save config to run directory for reproducibility
+    config.to_yaml(str(run_dir / "config.yaml"))
+    print(f"✓ Config saved to {run_dir / 'config.yaml'}")
+
     # Train
-    print("Starting training...")
+    print("\nStarting training...")
     print(f"Monitor with: tensorboard --logdir {log_path}")
     print()
 
@@ -224,9 +247,11 @@ Examples:
     args = parser.parse_args()
 
     # Load configuration
+    config_name = None
     if args.config:
         print(f"Loading configuration from: {args.config}")
         config = DQNConfig.from_yaml(args.config)
+        config_name = args.config
     else:
         print("Using default configuration (no config file specified)")
         config = DQNConfig()
@@ -247,7 +272,7 @@ Examples:
     if args.batch_size is not None:
         config.batch_size = args.batch_size
 
-    train(config)
+    train(config, config_name=config_name)
 
 
 if __name__ == "__main__":

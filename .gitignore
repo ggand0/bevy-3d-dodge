@@ -23,6 +23,7 @@ env/
 # RL Training
 /models
 /logs
+/results
 *.ckpt
 *.pt
 *.pth
