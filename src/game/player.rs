@@ -31,7 +31,7 @@ fn spawn_player(
     commands.spawn((
         Mesh3d(meshes.add(Capsule3d::new(0.5, 1.0))),
         MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgb(0.2, 0.5, 0.9),
+            base_color: Color::srgb(0.3, 0.8, 0.4),
             perceptual_roughness: 0.4, // Smooth plastic/jersey material
             metallic: 0.0,
             reflectance: 0.4, // Slight reflectance for synthetic fabric

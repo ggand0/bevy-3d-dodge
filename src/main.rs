@@ -369,7 +369,7 @@ fn handle_reset(
 
             // Reset player color
             if let Some(material) = materials.get_mut(&material_handle.0) {
-                material.base_color = Color::srgb(0.2, 0.5, 0.9);
+                material.base_color = Color::srgb(0.3, 0.8, 0.4);
             }
         }
 
