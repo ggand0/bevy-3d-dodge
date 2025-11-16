@@ -28,8 +28,8 @@ impl Plugin for CameraPlugin {
 }
 
 fn spawn_camera(mut commands: Commands, asset_server: Res<AssetServer>) {
-    // Load environment map texture (using specular map for skybox since it's sharper)
-    let skybox_handle = asset_server.load("textures/pisa_specular_rgb9e5_zstd.ktx2");
+    // Load bright autumn field environment map (converted with bevy_skybox_cli)
+    let skybox_handle = asset_server.load("textures/skybox.ktx2");
 
     // Rotation to convert from Y-up (typical for graphics) to Z-up (our scene)
     // Rotate +90 degrees around X axis to align sky with +Z direction
@@ -49,18 +49,16 @@ fn spawn_camera(mut commands: Commands, asset_server: Res<AssetServer>) {
         }),
         Transform::from_xyz(0.0, -15.0, 10.0)
             .looking_at(Vec3::new(0.0, 0.0, 1.0), Vec3::Z),
-        // Skybox - visible background environment
         Skybox {
             image: skybox_handle.clone(),
-            brightness: 500.0, // Moderate brightness for indoor setting
+            brightness: 500.0,
             rotation: env_rotation,
             ..default()
         },
-        // Environment map for realistic ambient lighting and reflections
         EnvironmentMapLight {
-            diffuse_map: asset_server.load("textures/pisa_diffuse_rgb9e5_zstd.ktx2"),
-            specular_map: skybox_handle,
-            intensity: 300.0, // Moderate intensity for indoor gym setting
+            diffuse_map: asset_server.load("textures/diffuse_map.ktx2"),
+            specular_map: asset_server.load("textures/specular_map.ktx2"),
+            intensity: 1500.0,
             rotation: env_rotation,
         },
         DebugCamera,
