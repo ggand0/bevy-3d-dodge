@@ -43,25 +43,25 @@ fn player_movement(
     if let Ok(mut velocity) = query.get_single_mut() {
         let mut direction = Vec2::ZERO;
 
-        // Based on camera view observation:
-        // +X is forward (away from camera), -X is backward (toward camera)
-        // +Y is left, -Y is right
+        // Based on camera view at (0, -15, 10) looking at origin:
+        // X axis runs left-right (right is positive)
+        // Y axis runs forward-backward (away from camera is positive)
         // velocity.0.x controls X translation, velocity.0.y controls Y translation
 
-        // W/Up = forward (away from camera) = +X
-        if keyboard_input.pressed(KeyCode::KeyW) || keyboard_input.pressed(KeyCode::ArrowUp) {
-            direction.x += 1.0;
-        }
-        // S/Down = backward (toward camera) = -X
-        if keyboard_input.pressed(KeyCode::KeyS) || keyboard_input.pressed(KeyCode::ArrowDown) {
+        // A/Left = left on screen = -X
+        if keyboard_input.pressed(KeyCode::KeyA) || keyboard_input.pressed(KeyCode::ArrowLeft) {
             direction.x -= 1.0;
         }
-        // A/Left = left on screen = +Y (since +Y is left from camera)
-        if keyboard_input.pressed(KeyCode::KeyA) || keyboard_input.pressed(KeyCode::ArrowLeft) {
+        // D/Right = right on screen = +X
+        if keyboard_input.pressed(KeyCode::KeyD) || keyboard_input.pressed(KeyCode::ArrowRight) {
+            direction.x += 1.0;
+        }
+        // W/Up = forward (away from camera) = +Y
+        if keyboard_input.pressed(KeyCode::KeyW) || keyboard_input.pressed(KeyCode::ArrowUp) {
             direction.y += 1.0;
         }
-        // D/Right = right on screen = -Y (since -Y is right from camera)
-        if keyboard_input.pressed(KeyCode::KeyD) || keyboard_input.pressed(KeyCode::ArrowRight) {
+        // S/Down = backward (toward camera) = -Y
+        if keyboard_input.pressed(KeyCode::KeyS) || keyboard_input.pressed(KeyCode::ArrowDown) {
             direction.y -= 1.0;
         }
 
