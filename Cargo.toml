@@ -1,0 +1,27 @@
+[package]
+name = "bevy_3d_dodge"
+version = "0.1.0"
+edition = "2021"
+authors = ["RL Game Developer"]
+description = "3D projectile dodging game with RL training capabilities"
+license = "MIT"
+
+[dependencies]
+bevy = "0.14"
+tokio = { version = "1.40", features = ["full"] }
+axum = "0.7"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors"] }
+rand = "0.8"
+
+[profile.dev]
+opt-level = 1  # Slightly optimize dev builds for better Bevy performance
+
+[profile.dev.package."*"]
+opt-level = 3  # Fully optimize dependencies even in dev builds
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
