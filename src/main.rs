@@ -76,10 +76,10 @@ fn setup_scene(
         });
     }
 
-    // Directional light with shadows for depth perception (from +X, -Y region)
+    // Softer directional light for subtle shadows (mimics skylights/windows)
     commands.spawn(DirectionalLightBundle {
         directional_light: DirectionalLight {
-            illuminance: 15000.0,
+            illuminance: 5000.0, // Further reduced since we'll add point lights
             shadows_enabled: true,
             ..default()
         },
@@ -87,10 +87,35 @@ fn setup_scene(
         ..default()
     });
 
-    // Ambient light (moderate brightness to preserve shadow contrast)
+    // Multiple point lights to simulate ceiling-mounted gym lights
+    let light_height = 8.0;
+    let light_positions = [
+        Vec3::new(-6.0, -6.0, light_height),
+        Vec3::new(6.0, -6.0, light_height),
+        Vec3::new(-6.0, 6.0, light_height),
+        Vec3::new(6.0, 6.0, light_height),
+        Vec3::new(0.0, 0.0, light_height),
+    ];
+
+    for pos in light_positions.iter() {
+        commands.spawn(PointLightBundle {
+            point_light: PointLight {
+                intensity: 800000.0, // Bright ceiling lights
+                color: Color::srgb(1.0, 0.98, 0.95), // Warm white
+                radius: 20.0,
+                range: 25.0,
+                shadows_enabled: false, // Disable for performance, directional light handles shadows
+                ..default()
+            },
+            transform: Transform::from_translation(*pos),
+            ..default()
+        });
+    }
+
+    // Ambient light (now lower since we have point lights)
     commands.insert_resource(AmbientLight {
-        color: Color::WHITE,
-        brightness: 300.0,
+        color: Color::srgb(0.9, 0.9, 0.95), // Slightly cool ambient
+        brightness: 150.0, // Reduced since point lights provide main illumination
     });
 
     // Play zone marker (dodgeball court)
