@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use crate::config::GameConfig;
+use crate::game::player::Player;
 
 #[derive(Component)]
 pub struct Projectile;
@@ -34,46 +35,50 @@ fn spawn_projectiles(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     config: Res<GameConfig>,
+    player_query: Query<&Transform, With<Player>>,
 ) {
     timer.timer.tick(time.delta());
 
     if timer.timer.just_finished() {
-        // Spawn from the +Y side (where the thrower would be)
-        let spawn_x = rand::random::<f32>() * 3.0 - 1.5; // Random X between -1.5 and 1.5 (narrow range)
-        let spawn_y = config.projectile_spawn_distance;
-        let spawn_z = 2.5; // Start higher for arc trajectory
+        // Get player position to aim at
+        if let Ok(player_transform) = player_query.get_single() {
+            // Spawn from the +Y side (where the thrower would be)
+            let spawn_x = rand::random::<f32>() * 3.0 - 1.5; // Random X between -1.5 and 1.5
+            let spawn_y = config.projectile_spawn_distance;
+            let spawn_z = 2.5; // Start higher for arc trajectory
 
-        // Target a random position in the play zone
-        let target_x = rand::random::<f32>() * 8.0 - 4.0; // Target X between -4 and 4
-        let target_y = rand::random::<f32>() * 4.0 - 2.0; // Target Y between -2 and 2
-        let target_z = config.player_start_height;
+            // Target the player's current position
+            let target_x = player_transform.translation.x;
+            let target_y = player_transform.translation.y;
+            let target_z = config.player_start_height;
 
-        // Calculate velocity for arc trajectory
-        let dx = target_x - spawn_x;
-        let dy = target_y - spawn_y;
-        let dz = target_z - spawn_z;
+            // Calculate velocity for arc trajectory
+            let dx = target_x - spawn_x;
+            let dy = target_y - spawn_y;
+            let dz = target_z - spawn_z;
 
-        // Time of flight (adjust for desired arc)
-        let flight_time = 2.0;
+            // Time of flight (adjust for desired arc)
+            let flight_time = 2.0;
 
-        // Initial velocity components
-        let vx = dx / flight_time;
-        let vy = dy / flight_time;
-        // For Z, we need to account for gravity: z = z0 + vz*t - 0.5*g*t^2
-        // So vz = (z - z0 + 0.5*g*t^2) / t
-        let gravity = 9.8;
-        let vz = (dz + 0.5 * gravity * flight_time * flight_time) / flight_time;
+            // Initial velocity components
+            let vx = dx / flight_time;
+            let vy = dy / flight_time;
+            // For Z, we need to account for gravity: z = z0 + vz*t - 0.5*g*t^2
+            // So vz = (z - z0 + 0.5*g*t^2) / t
+            let gravity = 9.8;
+            let vz = (dz + 0.5 * gravity * flight_time * flight_time) / flight_time;
 
-        commands.spawn((
-            PbrBundle {
-                mesh: meshes.add(Sphere::new(0.3)),
-                material: materials.add(Color::srgb(0.9, 0.2, 0.2)),
-                transform: Transform::from_xyz(spawn_x, spawn_y, spawn_z),
-                ..default()
-            },
-            Projectile,
-            ProjectileVelocity(Vec3::new(vx, vy, vz)),
-        ));
+            commands.spawn((
+                PbrBundle {
+                    mesh: meshes.add(Sphere::new(0.3)),
+                    material: materials.add(Color::srgb(0.9, 0.2, 0.2)),
+                    transform: Transform::from_xyz(spawn_x, spawn_y, spawn_z),
+                    ..default()
+                },
+                Projectile,
+                ProjectileVelocity(Vec3::new(vx, vy, vz)),
+            ));
+        }
     }
 }
 
@@ -83,6 +88,8 @@ fn move_projectiles(
 ) {
     let gravity = 9.8;
     let dt = time.delta_seconds();
+    let ground_level = 0.3; // Sphere radius to keep ball on surface
+    let restitution = 0.7; // Bounce coefficient (0.7 = loses 30% energy per bounce)
 
     for (mut transform, mut velocity) in query.iter_mut() {
         // Apply gravity to Z velocity
@@ -90,6 +97,20 @@ fn move_projectiles(
 
         // Update position
         transform.translation += velocity.0 * dt;
+
+        // Ground bounce physics
+        if transform.translation.z <= ground_level && velocity.0.z < 0.0 {
+            // Position correction to prevent sinking
+            transform.translation.z = ground_level;
+
+            // Reverse and dampen Z velocity (bounce)
+            velocity.0.z = -velocity.0.z * restitution;
+
+            // Apply friction to horizontal velocities when bouncing
+            let friction = 0.95;
+            velocity.0.x *= friction;
+            velocity.0.y *= friction;
+        }
     }
 }
 

@@ -253,7 +253,7 @@ fn setup_scene(
     // UI Text
     commands.spawn(
         TextBundle::from_section(
-            "WASD: Move | R: Reset | F1: Camera Debug | ESC: Quit",
+            "WASD: Move | Space: Jump | R: Reset | F1: Camera Debug | ESC: Quit",
             TextStyle {
                 font_size: 20.0,
                 color: Color::WHITE,
@@ -358,6 +358,8 @@ fn handle_reset(
         (
             &mut Transform,
             &mut game::player::Velocity,
+            &mut game::player::VerticalVelocity,
+            &mut game::player::OnGround,
             &Handle<StandardMaterial>,
         ),
         With<game::player::Player>,
@@ -372,9 +374,11 @@ fn handle_reset(
         game_state.is_game_over = false;
 
         // Reset player
-        if let Ok((mut transform, mut velocity, material_handle)) = player_query.get_single_mut() {
+        if let Ok((mut transform, mut velocity, mut v_vel, mut on_ground, material_handle)) = player_query.get_single_mut() {
             transform.translation = Vec3::new(0.0, 0.0, config.player_start_height);
             velocity.0 = Vec2::ZERO;
+            v_vel.0 = 0.0;
+            on_ground.0 = true;
 
             // Reset player color
             if let Some(material) = materials.get_mut(&*material_handle) {

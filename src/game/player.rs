@@ -7,12 +7,18 @@ pub struct Player;
 #[derive(Component)]
 pub struct Velocity(pub Vec2);
 
+#[derive(Component)]
+pub struct VerticalVelocity(pub f32);
+
+#[derive(Component)]
+pub struct OnGround(pub bool);
+
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, spawn_player)
-            .add_systems(Update, (player_movement, apply_velocity));
+            .add_systems(Update, (player_movement, player_jump, apply_velocity, apply_gravity));
     }
 }
 
@@ -32,6 +38,8 @@ fn spawn_player(
         },
         Player,
         Velocity(Vec2::ZERO),
+        VerticalVelocity(0.0),
+        OnGround(true),
     ));
 }
 
@@ -73,6 +81,18 @@ fn player_movement(
     }
 }
 
+fn player_jump(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut query: Query<(&mut VerticalVelocity, &OnGround), With<Player>>,
+) {
+    if let Ok((mut v_vel, on_ground)) = query.get_single_mut() {
+        // Jump with Space key, only when on ground
+        if keyboard_input.just_pressed(KeyCode::Space) && on_ground.0 {
+            v_vel.0 = 7.0; // Jump velocity
+        }
+    }
+}
+
 fn apply_velocity(
     mut query: Query<(&mut Transform, &Velocity)>,
     time: Res<Time>,
@@ -90,5 +110,31 @@ fn apply_velocity(
         // Clamp player position to play zone bounds
         transform.translation.x = transform.translation.x.clamp(-x_bound, x_bound);
         transform.translation.y = transform.translation.y.clamp(-y_bound, y_bound);
+    }
+}
+
+fn apply_gravity(
+    mut query: Query<(&mut Transform, &mut VerticalVelocity, &mut OnGround), With<Player>>,
+    time: Res<Time>,
+    config: Res<GameConfig>,
+) {
+    let gravity = 20.0; // Gravity acceleration
+    let dt = time.delta_seconds();
+
+    for (mut transform, mut v_vel, mut on_ground) in query.iter_mut() {
+        // Apply gravity
+        v_vel.0 -= gravity * dt;
+
+        // Update vertical position
+        transform.translation.z += v_vel.0 * dt;
+
+        // Ground collision (no bounce for player)
+        if transform.translation.z <= config.player_start_height {
+            transform.translation.z = config.player_start_height;
+            v_vel.0 = 0.0; // Stop vertical velocity (no bounce)
+            on_ground.0 = true;
+        } else {
+            on_ground.0 = false;
+        }
     }
 }
