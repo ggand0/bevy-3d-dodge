@@ -1,0 +1,40 @@
+outputs/
+/assets/**/*.zip
+/assets/textures/Standard-Cube-Map*
+/assets_dev/
+/devlogs/
+
+# Rust
+/target
+Cargo.lock
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv/
+ENV/
+env/
+.uv/
+
+# RL Training
+/models
+/logs
+*.ckpt
+*.pt
+*.pth
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Misc
+*.log
+.env
