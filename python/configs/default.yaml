@@ -1,0 +1,32 @@
+# Default DQN training configuration
+# Based on DQNConfig defaults
+
+# Training hyperparameters
+total_timesteps: 100000
+learning_rate: 0.0001
+buffer_size: 50000
+learning_starts: 1000
+batch_size: 32
+gamma: 0.99
+target_update_interval: 1000
+
+# Exploration (epsilon-greedy)
+exploration_fraction: 0.3
+exploration_initial_eps: 1.0
+exploration_final_eps: 0.05
+
+# Network architecture (null means use SB3 default: [64, 64])
+net_arch: null
+
+# Logging and checkpointing
+eval_freq: 5000
+save_freq: 10000
+n_eval_episodes: 5
+
+# Environment
+port: 8000
+max_episode_steps: 1000
+
+# Paths
+save_dir: models
+log_dir: logs

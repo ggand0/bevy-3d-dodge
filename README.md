@@ -148,19 +148,21 @@ This runs a random agent to verify the environment is working correctly.
 
 #### 3. Train DQN Agent
 
-Start training with default hyperparameters (100k steps):
-
+**Using YAML configs (recommended):**
 ```bash
-uv run python python/train.py --steps 100000
+# Load config from YAML file
+uv run python python/train.py --config python/configs/default.yaml
+
+# Override specific parameters from config
+uv run python python/train.py --config python/configs/default.yaml --steps 200000
 ```
 
-**Training options:**
-```bash
-# Quick test run (10k steps)
-uv run python python/train.py --steps 10000
+See [python/configs/](python/configs/) for available configurations and [python/configs/README.md](python/configs/README.md) for full documentation.
 
-# Long training run (500k steps)
-uv run python python/train.py --steps 500000 --buffer-size 100000
+**Using CLI arguments (legacy):**
+```bash
+# Default hyperparameters
+uv run python python/train.py --steps 100000
 
 # Custom hyperparameters
 uv run python python/train.py \

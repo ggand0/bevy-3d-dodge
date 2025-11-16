@@ -1,6 +1,9 @@
 """Training configuration and hyperparameters."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
+from pathlib import Path
+from typing import Optional, List
+import yaml
 
 
 @dataclass
@@ -23,6 +26,7 @@ class DQNConfig:
 
     # Network architecture (MlpPolicy default: [64, 64])
     # Can override with policy_kwargs=dict(net_arch=[256, 256])
+    net_arch: Optional[List[int]] = None
 
     # Logging and checkpointing
     eval_freq: int = 5000
@@ -36,6 +40,38 @@ class DQNConfig:
     # Paths
     save_dir: str = "models"
     log_dir: str = "logs"
+
+    @classmethod
+    def from_yaml(cls, yaml_path: str) -> "DQNConfig":
+        """Load configuration from YAML file.
+
+        Args:
+            yaml_path: Path to YAML configuration file
+
+        Returns:
+            DQNConfig instance with values from YAML
+        """
+        path = Path(yaml_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Config file not found: {yaml_path}")
+
+        with open(path, "r") as f:
+            config_dict = yaml.safe_load(f)
+
+        # Create config with YAML values, using defaults for missing keys
+        return cls(**{k: v for k, v in config_dict.items() if k in cls.__annotations__})
+
+    def to_yaml(self, yaml_path: str) -> None:
+        """Save configuration to YAML file.
+
+        Args:
+            yaml_path: Path where YAML file will be saved
+        """
+        path = Path(yaml_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(path, "w") as f:
+            yaml.dump(asdict(self), f, default_flow_style=False, sort_keys=False)
 
 
 # Quick training config for testing
