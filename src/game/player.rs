@@ -77,12 +77,18 @@ fn apply_velocity(
     mut query: Query<(&mut Transform, &Velocity)>,
     time: Res<Time>,
 ) {
+    // Play zone boundaries (match the zone marker in main.rs)
+    let zone_width = 10.0;
+    let zone_depth = 8.0;
+    let x_bound = zone_width / 2.0;  // ±5.0
+    let y_bound = zone_depth / 2.0;  // ±4.0
+
     for (mut transform, velocity) in query.iter_mut() {
         transform.translation.x += velocity.0.x * time.delta_seconds();
         transform.translation.y += velocity.0.y * time.delta_seconds();
 
-        // Clamp player position to reasonable bounds
-        transform.translation.x = transform.translation.x.clamp(-15.0, 15.0);
-        transform.translation.y = transform.translation.y.clamp(-15.0, 15.0);
+        // Clamp player position to play zone bounds
+        transform.translation.x = transform.translation.x.clamp(-x_bound, x_bound);
+        transform.translation.y = transform.translation.y.clamp(-y_bound, y_bound);
     }
 }

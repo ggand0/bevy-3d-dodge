@@ -38,9 +38,31 @@ fn spawn_projectiles(
     timer.timer.tick(time.delta());
 
     if timer.timer.just_finished() {
-        let spawn_x = rand::random::<f32>() * 10.0 - 5.0; // Random X between -5 and 5
+        // Spawn from the +Y side (where the thrower would be)
+        let spawn_x = rand::random::<f32>() * 3.0 - 1.5; // Random X between -1.5 and 1.5 (narrow range)
         let spawn_y = config.projectile_spawn_distance;
-        let spawn_z = config.player_start_height;
+        let spawn_z = 2.5; // Start higher for arc trajectory
+
+        // Target a random position in the play zone
+        let target_x = rand::random::<f32>() * 8.0 - 4.0; // Target X between -4 and 4
+        let target_y = rand::random::<f32>() * 4.0 - 2.0; // Target Y between -2 and 2
+        let target_z = config.player_start_height;
+
+        // Calculate velocity for arc trajectory
+        let dx = target_x - spawn_x;
+        let dy = target_y - spawn_y;
+        let dz = target_z - spawn_z;
+
+        // Time of flight (adjust for desired arc)
+        let flight_time = 2.0;
+
+        // Initial velocity components
+        let vx = dx / flight_time;
+        let vy = dy / flight_time;
+        // For Z, we need to account for gravity: z = z0 + vz*t - 0.5*g*t^2
+        // So vz = (z - z0 + 0.5*g*t^2) / t
+        let gravity = 9.8;
+        let vz = (dz + 0.5 * gravity * flight_time * flight_time) / flight_time;
 
         commands.spawn((
             PbrBundle {
@@ -50,17 +72,24 @@ fn spawn_projectiles(
                 ..default()
             },
             Projectile,
-            ProjectileVelocity(Vec3::new(0.0, -config.projectile_speed, 0.0)),
+            ProjectileVelocity(Vec3::new(vx, vy, vz)),
         ));
     }
 }
 
 fn move_projectiles(
-    mut query: Query<(&mut Transform, &ProjectileVelocity), With<Projectile>>,
+    mut query: Query<(&mut Transform, &mut ProjectileVelocity), With<Projectile>>,
     time: Res<Time>,
 ) {
-    for (mut transform, velocity) in query.iter_mut() {
-        transform.translation += velocity.0 * time.delta_seconds();
+    let gravity = 9.8;
+    let dt = time.delta_seconds();
+
+    for (mut transform, mut velocity) in query.iter_mut() {
+        // Apply gravity to Z velocity
+        velocity.0.z -= gravity * dt;
+
+        // Update position
+        transform.translation += velocity.0 * dt;
     }
 }
 
@@ -69,8 +98,11 @@ fn cleanup_projectiles(
     query: Query<(Entity, &Transform), With<Projectile>>,
 ) {
     for (entity, transform) in query.iter() {
-        // Despawn projectiles that have gone too far
-        if transform.translation.y < -25.0 {
+        // Despawn projectiles that have fallen below ground or gone too far
+        if transform.translation.z < -5.0
+            || transform.translation.y < -25.0
+            || transform.translation.y > 30.0
+            || transform.translation.x.abs() > 30.0 {
             commands.entity(entity).despawn();
         }
     }

@@ -16,7 +16,7 @@ impl Plugin for CollisionPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<CollisionEvent>()
             .init_resource::<GameState>()
-            .add_systems(Update, (detect_collisions, handle_collisions));
+            .add_systems(Update, (detect_collisions, check_out_of_bounds, handle_collisions));
     }
 }
 
@@ -39,6 +39,36 @@ fn detect_collisions(
             // Collision threshold: player radius (0.5) + projectile radius (0.3)
             if distance < 0.8 {
                 collision_events.send(CollisionEvent);
+            }
+        }
+    }
+}
+
+fn check_out_of_bounds(
+    player_query: Query<&Transform, With<Player>>,
+    mut collision_events: EventWriter<CollisionEvent>,
+    game_state: Res<GameState>,
+) {
+    if game_state.is_game_over {
+        return;
+    }
+
+    // Play zone boundaries (match the zone marker in main.rs)
+    let zone_width = 10.0;
+    let zone_depth = 8.0;
+    let x_bound = zone_width / 2.0;
+    let y_bound = zone_depth / 2.0;
+
+    if let Ok(player_transform) = player_query.get_single() {
+        let pos = player_transform.translation;
+
+        // Check if player is outside the zone (with small tolerance for clamping)
+        if pos.x.abs() >= x_bound - 0.01 || pos.y.abs() >= y_bound - 0.01 {
+            // Player touched the boundary - this is allowed, no game over
+            // Only trigger game over if they somehow get significantly outside
+            if pos.x.abs() > x_bound + 0.1 || pos.y.abs() > y_bound + 0.1 {
+                collision_events.send(CollisionEvent);
+                info!("Out of bounds!");
             }
         }
     }

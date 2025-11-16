@@ -98,6 +98,52 @@ fn setup_scene(
         brightness: 500.0,
     });
 
+    // Play zone marker (dodgeball court)
+    let zone_width = 10.0;  // X dimension
+    let zone_depth = 8.0;   // Y dimension
+    let zone_line_thickness = 0.08;
+    let zone_line_height = 0.002;
+
+    let zone_material = materials.add(StandardMaterial {
+        base_color: Color::srgba(1.0, 1.0, 0.0, 0.8), // Yellow with transparency
+        alpha_mode: AlphaMode::Blend,
+        emissive: Color::srgb(0.5, 0.5, 0.0).into(),
+        unlit: true,
+        ..default()
+    });
+
+    // Front line (toward where projectiles come from, +Y side)
+    commands.spawn(PbrBundle {
+        mesh: meshes.add(Cuboid::new(zone_width, zone_line_thickness, zone_line_height)),
+        material: zone_material.clone(),
+        transform: Transform::from_xyz(0.0, zone_depth / 2.0, zone_line_height / 2.0),
+        ..default()
+    });
+
+    // Back line (-Y side)
+    commands.spawn(PbrBundle {
+        mesh: meshes.add(Cuboid::new(zone_width, zone_line_thickness, zone_line_height)),
+        material: zone_material.clone(),
+        transform: Transform::from_xyz(0.0, -zone_depth / 2.0, zone_line_height / 2.0),
+        ..default()
+    });
+
+    // Left line (-X side)
+    commands.spawn(PbrBundle {
+        mesh: meshes.add(Cuboid::new(zone_line_thickness, zone_depth, zone_line_height)),
+        material: zone_material.clone(),
+        transform: Transform::from_xyz(-zone_width / 2.0, 0.0, zone_line_height / 2.0),
+        ..default()
+    });
+
+    // Right line (+X side)
+    commands.spawn(PbrBundle {
+        mesh: meshes.add(Cuboid::new(zone_line_thickness, zone_depth, zone_line_height)),
+        material: zone_material.clone(),
+        transform: Transform::from_xyz(zone_width / 2.0, 0.0, zone_line_height / 2.0),
+        ..default()
+    });
+
     // Coordinate axes visualization (hidden by default, shown in debug mode)
     let axis_length = 5.0;
     let axis_thickness = 0.1;
