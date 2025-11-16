@@ -8,7 +8,7 @@ pub const MAX_PROJECTILES: usize = 10;
 
 /// Size of observation vector:
 /// - Player: position (3) + velocity (2) = 5
-/// - Projectiles: 10 × (position (3) + velocity (3)) = 60
+/// - Projectiles: 10 * (position (3) + velocity (3)) = 60
 /// - Total: 65 floats
 pub const OBSERVATION_SIZE: usize = 5 + (MAX_PROJECTILES * 6);
 

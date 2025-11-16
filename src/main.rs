@@ -1,10 +1,23 @@
 mod config;
 mod game;
+mod rl;
 
 use bevy::prelude::*;
 use config::GameConfig;
+use tokio::sync::mpsc;
+use rl::api::{EnvCommand, SharedEnvState, start_api_server};
+use rl::environment::RLEnvironmentState;
 
 fn main() {
+    // Create channel for RL API commands
+    let (command_tx, command_rx) = mpsc::unbounded_channel::<EnvCommand>();
+
+    // Create shared state for RL API
+    let shared_state = SharedEnvState::default();
+
+    // Start HTTP API server on port 8000
+    start_api_server(8000, shared_state.clone(), command_tx);
+
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
@@ -15,9 +28,12 @@ fn main() {
             ..default()
         }))
         .insert_resource(GameConfig::default())
+        .insert_resource(RLEnvironmentState::default())
+        .insert_non_send_resource(command_rx)
+        .insert_resource(shared_state)
         .add_plugins(game::GamePlugin)
         .add_systems(Startup, setup_scene)
-        .add_systems(Update, (handle_reset, update_ui))
+        .add_systems(Update, (handle_reset, update_ui, handle_rl_commands, update_rl_state))
         .run();
 }
 
@@ -384,5 +400,98 @@ fn handle_reset(
     // Handle quit
     if keyboard_input.just_pressed(KeyCode::Escape) {
         std::process::exit(0);
+    }
+}
+
+/// Handle RL API commands (reset, step)
+fn handle_rl_commands(
+    mut command_rx: NonSendMut<mpsc::UnboundedReceiver<EnvCommand>>,
+    mut player_query: Query<(&mut Transform, &mut game::player::Velocity), With<game::player::Player>>,
+    mut game_state: ResMut<game::collision::GameState>,
+    mut env_state: ResMut<RLEnvironmentState>,
+    projectile_query: Query<Entity, With<game::projectile::Projectile>>,
+    mut commands: Commands,
+    config: Res<GameConfig>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    // Process all pending commands
+    while let Ok(command) = command_rx.try_recv() {
+        match command {
+            EnvCommand::Reset => {
+                // Reset game state
+                game_state.is_game_over = false;
+                env_state.episode_steps = 0;
+                env_state.total_reward = 0.0;
+                env_state.last_reward = 0.0;
+
+                // Reset player
+                if let Ok((mut transform, mut velocity)) = player_query.get_single_mut() {
+                    transform.translation = Vec3::new(0.0, 0.0, config.player_start_height);
+                    velocity.0 = Vec2::ZERO;
+                }
+
+                // Despawn all projectiles
+                for entity in projectile_query.iter() {
+                    commands.entity(entity).despawn();
+                }
+
+                info!("RL Environment reset");
+            }
+            EnvCommand::Step { action } => {
+                // Parse and apply action
+                if let Ok(rl_action) = rl::action::RLAction::from_index(action) {
+                    if let Ok((_, mut velocity)) = player_query.get_single_mut() {
+                        rl::action::apply_action(rl_action, &mut velocity, &config);
+                    }
+                }
+
+                // Increment step counter
+                env_state.episode_steps += 1;
+            }
+        }
+    }
+}
+
+/// Update RL shared state after each frame
+fn update_rl_state(
+    player_query: Query<(&Transform, &game::player::Velocity), With<game::player::Player>>,
+    projectile_query: Query<(&Transform, &game::projectile::ProjectileVelocity), With<game::projectile::Projectile>>,
+    player_transform_query: Query<&Transform, With<game::player::Player>>,
+    projectile_transform_query: Query<&Transform, With<game::projectile::Projectile>>,
+    game_state: Res<game::collision::GameState>,
+    mut env_state: ResMut<RLEnvironmentState>,
+    shared_state: Res<SharedEnvState>,
+) {
+    // Extract observation
+    let observation = rl::observation::extract_observation(&player_query, &projectile_query);
+
+    // Calculate reward
+    let reward = rl::environment::calculate_reward(&game_state, &player_transform_query, &projectile_transform_query);
+
+    env_state.last_reward = reward;
+    env_state.total_reward += reward;
+
+    // Check episode termination
+    let done = rl::environment::is_episode_done(&game_state, &env_state);
+    let truncated = rl::environment::is_episode_truncated(&env_state, 1000); // Max 1000 steps
+
+    // Create step info
+    let info = rl::environment::create_step_info(&env_state, projectile_query.iter().count());
+
+    // Update shared state
+    if let Ok(mut obs) = shared_state.observation.lock() {
+        *obs = observation;
+    }
+    if let Ok(mut r) = shared_state.reward.lock() {
+        *r = reward;
+    }
+    if let Ok(mut d) = shared_state.done.lock() {
+        *d = done;
+    }
+    if let Ok(mut t) = shared_state.truncated.lock() {
+        *t = truncated;
+    }
+    if let Ok(mut i) = shared_state.info.lock() {
+        *i = info;
     }
 }
