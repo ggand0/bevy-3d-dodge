@@ -13,7 +13,7 @@ pub struct CameraDebugMode {
 
 impl Default for CameraDebugMode {
     fn default() -> Self {
-        Self { enabled: true }
+        Self { enabled: false }  // Coordinate axes hidden by default
     }
 }
 
@@ -71,7 +71,7 @@ fn toggle_debug_mode(
 ) {
     if keyboard_input.just_pressed(KeyCode::F1) {
         debug_mode.enabled = !debug_mode.enabled;
-        info!("Camera debug mode: {}", if debug_mode.enabled { "ON" } else { "OFF" });
+        info!("Coordinate axes: {}", if debug_mode.enabled { "VISIBLE" } else { "HIDDEN" });
     }
 }
 
@@ -80,14 +80,9 @@ fn debug_camera_controls(
     mouse_button: Res<ButtonInput<MouseButton>>,
     mut mouse_motion: EventReader<MouseMotion>,
     mut mouse_wheel: EventReader<MouseWheel>,
-    debug_mode: Res<CameraDebugMode>,
     mut camera_query: Query<&mut Transform, With<DebugCamera>>,
     time: Res<Time>,
 ) {
-    if !debug_mode.enabled {
-        return;
-    }
-
     if let Ok(mut transform) = camera_query.get_single_mut() {
         let rotate_speed = 1.0;
         let mouse_sensitivity = 0.003;

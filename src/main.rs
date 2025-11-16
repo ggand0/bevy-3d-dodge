@@ -249,7 +249,7 @@ fn setup_scene(
 
     // UI Text
     commands.spawn((
-        Text::new("WASD: Move | Space: Jump | R: Reset | F1: Camera Debug | ESC: Quit"),
+        Text::new("WASD: Move | Space: Jump | R: Reset | F1: Toggle Axes | ESC: Quit"),
         TextFont {
             font_size: 20.0,
             ..default()
