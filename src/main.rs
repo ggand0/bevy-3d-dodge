@@ -98,13 +98,14 @@ fn setup_scene(
         brightness: 500.0,
     });
 
-    // Coordinate axes visualization
+    // Coordinate axes visualization (hidden by default, shown in debug mode)
     let axis_length = 5.0;
     let axis_thickness = 0.1;
     let arrow_head_size = 0.3;
 
     // X axis (Red) - pointing in +X direction
-    commands.spawn(PbrBundle {
+    commands.spawn((
+        PbrBundle {
         mesh: meshes.add(Cuboid::new(axis_length, axis_thickness, axis_thickness)),
         material: materials.add(StandardMaterial {
             base_color: Color::srgb(1.0, 0.0, 0.0),
@@ -113,10 +114,14 @@ fn setup_scene(
             ..default()
         }),
         transform: Transform::from_xyz(axis_length / 2.0, 0.0, 0.1),
+        visibility: Visibility::Hidden,
         ..default()
-    });
+    },
+        CoordinateAxis,
+    ));
     // X axis arrow head
-    commands.spawn(PbrBundle {
+    commands.spawn((
+        PbrBundle {
         mesh: meshes.add(Cuboid::new(arrow_head_size, arrow_head_size * 2.0, arrow_head_size)),
         material: materials.add(StandardMaterial {
             base_color: Color::srgb(1.0, 0.0, 0.0),
@@ -126,11 +131,15 @@ fn setup_scene(
         }),
         transform: Transform::from_xyz(axis_length + arrow_head_size / 2.0, 0.0, 0.1)
             .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_4)),
+        visibility: Visibility::Hidden,
         ..default()
-    });
+    },
+        CoordinateAxis,
+    ));
 
     // Y axis (Green) - pointing in +Y direction
-    commands.spawn(PbrBundle {
+    commands.spawn((
+        PbrBundle {
         mesh: meshes.add(Cuboid::new(axis_thickness, axis_length, axis_thickness)),
         material: materials.add(StandardMaterial {
             base_color: Color::srgb(0.0, 1.0, 0.0),
@@ -139,10 +148,14 @@ fn setup_scene(
             ..default()
         }),
         transform: Transform::from_xyz(0.0, axis_length / 2.0, 0.1),
+        visibility: Visibility::Hidden,
         ..default()
-    });
+    },
+        CoordinateAxis,
+    ));
     // Y axis arrow head
-    commands.spawn(PbrBundle {
+    commands.spawn((
+        PbrBundle {
         mesh: meshes.add(Cuboid::new(arrow_head_size * 2.0, arrow_head_size, arrow_head_size)),
         material: materials.add(StandardMaterial {
             base_color: Color::srgb(0.0, 1.0, 0.0),
@@ -152,11 +165,15 @@ fn setup_scene(
         }),
         transform: Transform::from_xyz(0.0, axis_length + arrow_head_size / 2.0, 0.1)
             .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_4)),
+        visibility: Visibility::Hidden,
         ..default()
-    });
+    },
+        CoordinateAxis,
+    ));
 
     // Z axis (Blue) - pointing in +Z direction
-    commands.spawn(PbrBundle {
+    commands.spawn((
+        PbrBundle {
         mesh: meshes.add(Cuboid::new(axis_thickness, axis_thickness, axis_length)),
         material: materials.add(StandardMaterial {
             base_color: Color::srgb(0.0, 0.0, 1.0),
@@ -165,10 +182,14 @@ fn setup_scene(
             ..default()
         }),
         transform: Transform::from_xyz(0.0, 0.0, axis_length / 2.0),
+        visibility: Visibility::Hidden,
         ..default()
-    });
+    },
+        CoordinateAxis,
+    ));
     // Z axis arrow head (cone-like)
-    commands.spawn(PbrBundle {
+    commands.spawn((
+        PbrBundle {
         mesh: meshes.add(Cuboid::new(arrow_head_size, arrow_head_size, arrow_head_size * 2.0)),
         material: materials.add(StandardMaterial {
             base_color: Color::srgb(0.0, 0.0, 1.0),
@@ -177,8 +198,11 @@ fn setup_scene(
             ..default()
         }),
         transform: Transform::from_xyz(0.0, 0.0, axis_length + arrow_head_size),
+        visibility: Visibility::Hidden,
         ..default()
-    });
+    },
+        CoordinateAxis,
+    ));
 
     // UI Text
     commands.spawn(
@@ -245,11 +269,15 @@ struct GameOverText;
 #[derive(Component)]
 struct CameraDebugText;
 
+#[derive(Component)]
+struct CoordinateAxis;
+
 fn update_ui(
     game_state: Res<game::collision::GameState>,
     debug_mode: Res<game::camera::CameraDebugMode>,
     mut game_over_query: Query<&mut Style, (With<GameOverText>, Without<CameraDebugText>)>,
     mut debug_text_query: Query<&mut Style, (With<CameraDebugText>, Without<GameOverText>)>,
+    mut axis_query: Query<&mut Visibility, With<CoordinateAxis>>,
 ) {
     if let Ok(mut style) = game_over_query.get_single_mut() {
         style.display = if game_state.is_game_over {
@@ -264,6 +292,15 @@ fn update_ui(
             Display::Flex
         } else {
             Display::None
+        };
+    }
+
+    // Toggle coordinate axes visibility based on debug mode
+    for mut visibility in axis_query.iter_mut() {
+        *visibility = if debug_mode.enabled {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
         };
     }
 }
