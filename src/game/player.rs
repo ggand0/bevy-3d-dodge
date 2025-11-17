@@ -76,11 +76,13 @@ fn player_movement(
             direction.y -= 1.0;
         }
 
-        if direction.length() > 0.0 {
-            direction = direction.normalize();
+        // Only update velocity if keyboard input detected (don't override RL actions)
+        if keyboard_input.get_pressed().next().is_some() {
+            if direction.length() > 0.0 {
+                direction = direction.normalize();
+            }
+            velocity.0 = direction * config.player_speed;
         }
-
-        velocity.0 = direction * config.player_speed;
     }
 }
 
