@@ -1,0 +1,36 @@
+# Improved baseline configuration based on initial 100k training analysis
+# Addresses issues found in devlogs/010_initial_training_results.md:
+# - Lower learning rate for stability
+# - Larger buffer to reduce catastrophic forgetting
+# - Larger network for better capacity
+# - Extended training for better convergence
+
+# Training hyperparameters
+total_timesteps: 300000
+learning_rate: 0.00005  # Reduced from 1e-4 to 5e-5 for stability
+buffer_size: 100000     # Increased from 50k to reduce forgetting
+learning_starts: 1000
+batch_size: 32
+gamma: 0.99
+target_update_interval: 1000
+
+# Exploration (epsilon-greedy)
+exploration_fraction: 0.3
+exploration_initial_eps: 1.0
+exploration_final_eps: 0.05
+
+# Network architecture - larger network for better capacity
+net_arch: [256, 256]  # Increased from default [64, 64]
+
+# Logging and checkpointing
+eval_freq: 5000
+save_freq: 10000
+n_eval_episodes: 10  # More episodes for better eval statistics
+
+# Environment
+port: 8000
+max_episode_steps: 1000
+
+# Paths
+save_dir: models
+log_dir: logs
