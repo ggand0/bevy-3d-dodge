@@ -138,6 +138,30 @@ class BevyDodgeEnv(gym.Env):
         except requests.exceptions.RequestException as e:
             raise RuntimeError(f"Failed to end training mode: {e}") from e
 
+    def set_level(self, level: int) -> None:
+        """Set the game difficulty level.
+
+        Args:
+            level: Level number (1 for baseline, 2 for hard)
+
+        Note:
+            - Level 1 is the original baseline difficulty used for previous models
+            - Level 2 has faster projectiles, more frequent spawning, and more projectiles
+            - Calling this will reset the game environment
+        """
+        if level not in (1, 2):
+            raise ValueError(f"Invalid level: {level}. Must be 1 or 2")
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/set_level",
+                json={"level": level},
+                timeout=self.timeout
+            )
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            raise RuntimeError(f"Failed to set level: {e}") from e
+
     def close(self) -> None:
         """Close the environment and disable training mode if enabled."""
         try:

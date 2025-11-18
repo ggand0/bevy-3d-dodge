@@ -3,6 +3,7 @@
 
 algorithm: PPO
 port: 8000
+level: 2  # Difficulty level (1 = Baseline, 2 = Hard)
 
 # Training
 total_timesteps: 1000  # Very short for quick testing

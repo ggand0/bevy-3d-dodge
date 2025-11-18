@@ -3,7 +3,7 @@ mod game;
 mod rl;
 
 use bevy::prelude::*;
-use config::GameConfig;
+use config::{GameConfig, Level};
 use tokio::sync::mpsc;
 use rl::api::{EnvCommand, SharedEnvState, start_api_server};
 use rl::environment::{RLEnvironmentState, ControlMode, TrainingMode};
@@ -27,6 +27,7 @@ fn main() {
             }),
             ..default()
         }))
+        .insert_resource(Level::default())
         .insert_resource(GameConfig::default())
         .insert_resource(RLEnvironmentState::default())
         .insert_resource(ControlMode::default())
@@ -35,7 +36,7 @@ fn main() {
         .insert_resource(shared_state)
         .add_plugins(game::GamePlugin)
         .add_systems(Startup, setup_scene)
-        .add_systems(Update, (handle_reset, update_ui, handle_rl_commands, update_rl_state))
+        .add_systems(Update, (handle_reset, handle_level_change, update_ui, handle_rl_commands, update_rl_state))
         .run();
 }
 
@@ -265,9 +266,9 @@ fn setup_scene(
         CoordinateAxis,
     ));
 
-    // UI Text
+    // UI Text - Controls
     commands.spawn((
-        Text::new("WASD: Move | Space: Jump | R: Reset | F1: Free Cam | F2: Toggle Axes | ESC: Quit"),
+        Text::new("WASD: Move | Space: Jump | R: Reset | L: Change Level | F1: Free Cam | F2: Toggle Axes | ESC: Quit"),
         TextFont {
             font_size: 20.0,
             ..default()
@@ -279,6 +280,23 @@ fn setup_scene(
             left: Val::Px(10.0),
             ..default()
         },
+    ));
+
+    // Level indicator (top right)
+    commands.spawn((
+        Text::new("Level 1 (Baseline)"),
+        TextFont {
+            font_size: 22.0,
+            ..default()
+        },
+        TextColor(Color::srgb(0.3, 1.0, 0.3)), // Green color
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(10.0),
+            right: Val::Px(10.0),
+            ..default()
+        },
+        LevelText,
     ));
 
     // Training mode indicator (shown when training mode is enabled)
@@ -347,6 +365,9 @@ struct GameOverText;
 struct TrainingModeText;
 
 #[derive(Component)]
+struct LevelText;
+
+#[derive(Component)]
 struct CameraDebugText;
 
 #[derive(Component)]
@@ -357,9 +378,11 @@ fn update_ui(
     debug_mode: Res<game::camera::CameraDebugMode>,
     free_camera_mode: Res<game::camera::FreeCameraMode>,
     training_mode: Res<TrainingMode>,
-    mut game_over_query: Query<&mut Node, (With<GameOverText>, Without<CameraDebugText>, Without<TrainingModeText>)>,
-    mut training_text_query: Query<&mut Node, (With<TrainingModeText>, Without<CameraDebugText>, Without<GameOverText>)>,
-    mut debug_text_query: Query<&mut Node, (With<CameraDebugText>, Without<GameOverText>, Without<TrainingModeText>)>,
+    level: Res<Level>,
+    mut game_over_query: Query<&mut Node, (With<GameOverText>, Without<CameraDebugText>, Without<TrainingModeText>, Without<LevelText>)>,
+    mut training_text_query: Query<&mut Node, (With<TrainingModeText>, Without<CameraDebugText>, Without<GameOverText>, Without<LevelText>)>,
+    mut level_text_query: Query<&mut Text, With<LevelText>>,
+    mut debug_text_query: Query<&mut Node, (With<CameraDebugText>, Without<GameOverText>, Without<TrainingModeText>, Without<LevelText>)>,
     mut axis_query: Query<&mut Visibility, With<CoordinateAxis>>,
 ) {
     if let Ok(mut node) = game_over_query.get_single_mut() {
@@ -377,6 +400,11 @@ fn update_ui(
         } else {
             Display::None
         };
+    }
+
+    // Update level indicator text
+    if let Ok(mut text) = level_text_query.get_single_mut() {
+        **text = level.name().to_string();
     }
 
     // Camera help text is only visible in free camera mode
@@ -449,7 +477,61 @@ fn handle_reset(
     }
 }
 
-/// Handle RL API commands (reset, step, start/end training)
+/// Handle level changes with L key (only when not in training mode)
+fn handle_level_change(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    training_mode: Res<TrainingMode>,
+    mut level: ResMut<Level>,
+    mut config: ResMut<GameConfig>,
+    mut game_state: ResMut<game::collision::GameState>,
+    mut player_query: Query<
+        (
+            &mut Transform,
+            &mut game::player::Velocity,
+            &mut game::player::VerticalVelocity,
+            &mut game::player::OnGround,
+            &MeshMaterial3d<StandardMaterial>,
+        ),
+        With<game::player::Player>,
+    >,
+    projectile_query: Query<Entity, With<game::projectile::Projectile>>,
+    mut commands: Commands,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    // Only allow level changes when not in training mode
+    if keyboard_input.just_pressed(KeyCode::KeyL) && !training_mode.enabled {
+        // Change to next level
+        *level = level.next();
+
+        // Update game config for new level
+        *config = GameConfig::for_level(*level);
+
+        // Reset game state
+        game_state.is_game_over = false;
+
+        // Reset player
+        if let Ok((mut transform, mut velocity, mut v_vel, mut on_ground, material_handle)) = player_query.get_single_mut() {
+            transform.translation = Vec3::new(0.0, 0.0, config.player_start_height);
+            velocity.0 = Vec2::ZERO;
+            v_vel.0 = 0.0;
+            on_ground.0 = true;
+
+            // Reset player color
+            if let Some(material) = materials.get_mut(&material_handle.0) {
+                material.base_color = Color::srgb(0.3, 0.8, 0.4);
+            }
+        }
+
+        // Despawn all projectiles
+        for entity in projectile_query.iter() {
+            commands.entity(entity).despawn();
+        }
+
+        info!("Level changed to: {}", level.name());
+    }
+}
+
+/// Handle RL API commands (reset, step, start/end training, set level)
 fn handle_rl_commands(
     mut command_rx: NonSendMut<mpsc::UnboundedReceiver<EnvCommand>>,
     mut player_query: Query<(&mut Transform, &mut game::player::Velocity, &MeshMaterial3d<StandardMaterial>), With<game::player::Player>>,
@@ -457,9 +539,10 @@ fn handle_rl_commands(
     mut env_state: ResMut<RLEnvironmentState>,
     mut control_mode: ResMut<ControlMode>,
     mut training_mode: ResMut<TrainingMode>,
+    mut level: ResMut<Level>,
+    mut config: ResMut<GameConfig>,
     projectile_query: Query<Entity, With<game::projectile::Projectile>>,
     mut commands: Commands,
-    config: Res<GameConfig>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // Process all pending commands
@@ -473,6 +556,45 @@ fn handle_rl_commands(
                 training_mode.enabled = false;
                 *control_mode = ControlMode::Human;
                 info!("Training mode DISABLED - returning to human control");
+            }
+            EnvCommand::SetLevel { level: level_num } => {
+                // Convert level number to Level enum
+                let new_level = match level_num {
+                    1 => Level::Level1,
+                    2 => Level::Level2,
+                    _ => {
+                        warn!("Invalid level number: {}. Ignoring.", level_num);
+                        continue;
+                    }
+                };
+
+                // Update level and config
+                *level = new_level;
+                *config = GameConfig::for_level(new_level);
+
+                // Reset game state
+                game_state.is_game_over = false;
+                env_state.episode_steps = 0;
+                env_state.total_reward = 0.0;
+                env_state.last_reward = 0.0;
+
+                // Reset player
+                if let Ok((mut transform, mut velocity, material_handle)) = player_query.get_single_mut() {
+                    transform.translation = Vec3::new(0.0, 0.0, config.player_start_height);
+                    velocity.0 = Vec2::ZERO;
+
+                    // Reset player color to green
+                    if let Some(material) = materials.get_mut(&material_handle.0) {
+                        material.base_color = Color::srgb(0.3, 0.8, 0.4);
+                    }
+                }
+
+                // Despawn all projectiles
+                for entity in projectile_query.iter() {
+                    commands.entity(entity).despawn();
+                }
+
+                info!("Level set to: {}", new_level.name());
             }
             EnvCommand::Reset => {
                 // Switch to RL agent control

@@ -48,6 +48,7 @@ class DQNConfig:
     # Environment
     port: int = 8000
     max_episode_steps: int = 1000
+    level: int = 1  # Difficulty level (1 for baseline, 2 for hard)
 
     # Paths
     save_dir: str = "models"

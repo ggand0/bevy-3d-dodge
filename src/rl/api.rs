@@ -41,6 +41,7 @@ pub enum EnvCommand {
     Step { action: usize },
     StartTraining,
     EndTraining,
+    SetLevel { level: u8 },
 }
 
 /// API server state
@@ -57,6 +58,11 @@ struct ApiState {
 #[derive(Deserialize)]
 struct StepRequest {
     action: usize,
+}
+
+#[derive(Deserialize)]
+struct SetLevelRequest {
+    level: u8,
 }
 
 #[derive(Serialize)]
@@ -230,6 +236,23 @@ async fn end_training_handler(
     Ok(StatusCode::OK)
 }
 
+async fn set_level_handler(
+    State(state): State<ApiState>,
+    Json(payload): Json<SetLevelRequest>,
+) -> Result<StatusCode, AppError> {
+    // Validate level number (1 or 2)
+    if payload.level < 1 || payload.level > 2 {
+        return Err(AppError::InvalidAction(format!("Invalid level: {}. Must be 1 or 2", payload.level)));
+    }
+
+    state
+        .command_tx
+        .send(EnvCommand::SetLevel { level: payload.level })
+        .map_err(|_| AppError::InternalError("Failed to send set level command".to_string()))?;
+
+    Ok(StatusCode::OK)
+}
+
 // ============================================================================
 // Error Handling
 // ============================================================================
@@ -280,6 +303,7 @@ pub fn create_router(
         .route("/action_space", get(action_space_handler))
         .route("/start_training", post(start_training_handler))
         .route("/end_training", post(end_training_handler))
+        .route("/set_level", post(set_level_handler))
         .layer(cors)
         .with_state(api_state)
 }
