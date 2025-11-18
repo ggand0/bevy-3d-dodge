@@ -3,6 +3,7 @@ outputs/
 /assets/textures/Standard-Cube-Map*
 /assets_dev/
 /devlogs/
+models*/
 
 # Rust
 /target
