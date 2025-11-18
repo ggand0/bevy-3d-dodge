@@ -266,7 +266,7 @@ fn setup_scene(
 
     // UI Text
     commands.spawn((
-        Text::new("WASD: Move | Space: Jump | R: Reset | F1: Toggle Axes | ESC: Quit"),
+        Text::new("WASD: Move | Space: Jump | R: Reset | F1: Free Cam | F2: Toggle Axes | ESC: Quit"),
         TextFont {
             font_size: 20.0,
             ..default()
@@ -280,9 +280,9 @@ fn setup_scene(
         },
     ));
 
-    // Camera debug help text (now shown by default)
+    // Camera help text for free camera mode
     commands.spawn((
-        Text::new("Camera: LMB+Drag: Rotate | MMB+Drag: Pan | Scroll: Zoom | UO: Up/Down"),
+        Text::new("Free Cam: LMB+Drag: Look | MMB+Drag: Pan | Scroll: Zoom | UO: Up/Down"),
         TextFont {
             font_size: 16.0,
             ..default()
@@ -298,18 +298,23 @@ fn setup_scene(
     ));
 
     // Game over text (initially hidden)
+    // Centered horizontally using left: 50% and transform translateX(-50%)
     commands.spawn((
-        Text::new("GAME OVER! Press R to restart"),
+        Text::new("GAME OVER!"),
         TextFont {
             font_size: 40.0,
             ..default()
         },
-        TextColor(Color::srgb(1.0, 0.2, 0.2)),
+        TextColor(Color::srgb(1.0, 0.5, 0.0)), // Orange color
         Node {
             position_type: PositionType::Absolute,
             top: Val::Px(300.0),
-            left: Val::Px(400.0),
+            left: Val::Percent(50.0),
             display: Display::None,
+            margin: UiRect {
+                left: Val::Px(-100.0), // Approximate half-width for centering (adjust based on text width)
+                ..default()
+            },
             ..default()
         },
         GameOverText,
@@ -328,6 +333,7 @@ struct CoordinateAxis;
 fn update_ui(
     game_state: Res<game::collision::GameState>,
     debug_mode: Res<game::camera::CameraDebugMode>,
+    free_camera_mode: Res<game::camera::FreeCameraMode>,
     mut game_over_query: Query<&mut Node, (With<GameOverText>, Without<CameraDebugText>)>,
     mut debug_text_query: Query<&mut Node, (With<CameraDebugText>, Without<GameOverText>)>,
     mut axis_query: Query<&mut Visibility, With<CoordinateAxis>>,
@@ -340,9 +346,13 @@ fn update_ui(
         };
     }
 
-    // Camera help text is always visible now since camera controls are enabled by default
+    // Camera help text is only visible in free camera mode
     if let Ok(mut node) = debug_text_query.get_single_mut() {
-        node.display = Display::Flex;
+        node.display = if free_camera_mode.enabled {
+            Display::Flex
+        } else {
+            Display::None
+        };
     }
 
     // Toggle coordinate axes visibility based on debug mode
@@ -407,7 +417,7 @@ fn handle_reset(
 /// Handle RL API commands (reset, step)
 fn handle_rl_commands(
     mut command_rx: NonSendMut<mpsc::UnboundedReceiver<EnvCommand>>,
-    mut player_query: Query<(&mut Transform, &mut game::player::Velocity), With<game::player::Player>>,
+    mut player_query: Query<(&mut Transform, &mut game::player::Velocity, &MeshMaterial3d<StandardMaterial>), With<game::player::Player>>,
     mut game_state: ResMut<game::collision::GameState>,
     mut env_state: ResMut<RLEnvironmentState>,
     mut control_mode: ResMut<ControlMode>,
@@ -429,9 +439,14 @@ fn handle_rl_commands(
                 env_state.last_reward = 0.0;
 
                 // Reset player
-                if let Ok((mut transform, mut velocity)) = player_query.get_single_mut() {
+                if let Ok((mut transform, mut velocity, material_handle)) = player_query.get_single_mut() {
                     transform.translation = Vec3::new(0.0, 0.0, config.player_start_height);
                     velocity.0 = Vec2::ZERO;
+
+                    // Reset player color to green
+                    if let Some(material) = materials.get_mut(&material_handle.0) {
+                        material.base_color = Color::srgb(0.3, 0.8, 0.4);
+                    }
                 }
 
                 // Despawn all projectiles
@@ -444,7 +459,7 @@ fn handle_rl_commands(
             EnvCommand::Step { action } => {
                 // Parse and apply action
                 if let Ok(rl_action) = rl::action::RLAction::from_index(action) {
-                    if let Ok((_, mut velocity)) = player_query.get_single_mut() {
+                    if let Ok((_, mut velocity, _)) = player_query.get_single_mut() {
                         rl::action::apply_action(rl_action, &mut velocity, &config);
                     }
                 }

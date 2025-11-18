@@ -17,13 +17,25 @@ impl Default for CameraDebugMode {
     }
 }
 
+#[derive(Resource)]
+pub struct FreeCameraMode {
+    pub enabled: bool,
+}
+
+impl Default for FreeCameraMode {
+    fn default() -> Self {
+        Self { enabled: false }  // Free camera disabled by default
+    }
+}
+
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CameraDebugMode>()
+            .init_resource::<FreeCameraMode>()
             .add_systems(Startup, spawn_camera)
-            .add_systems(Update, (toggle_debug_mode, debug_camera_controls));
+            .add_systems(Update, (toggle_debug_mode, toggle_free_camera, debug_camera_controls));
     }
 }
 
@@ -69,9 +81,30 @@ fn toggle_debug_mode(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut debug_mode: ResMut<CameraDebugMode>,
 ) {
-    if keyboard_input.just_pressed(KeyCode::F1) {
+    if keyboard_input.just_pressed(KeyCode::F2) {
         debug_mode.enabled = !debug_mode.enabled;
         info!("Coordinate axes: {}", if debug_mode.enabled { "VISIBLE" } else { "HIDDEN" });
+    }
+}
+
+fn toggle_free_camera(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut free_camera_mode: ResMut<FreeCameraMode>,
+    mut camera_query: Query<&mut Transform, With<DebugCamera>>,
+) {
+    if keyboard_input.just_pressed(KeyCode::F1) {
+        free_camera_mode.enabled = !free_camera_mode.enabled;
+
+        // Reset camera to default position when exiting free camera mode
+        if !free_camera_mode.enabled {
+            if let Ok(mut transform) = camera_query.get_single_mut() {
+                // Reset to default camera position and orientation
+                transform.translation = Vec3::new(0.0, -15.0, 10.0);
+                *transform = transform.looking_at(Vec3::new(0.0, 0.0, 1.0), Vec3::Z);
+            }
+        }
+
+        info!("Free camera mode: {}", if free_camera_mode.enabled { "ENABLED" } else { "DISABLED" });
     }
 }
 
@@ -82,23 +115,28 @@ fn debug_camera_controls(
     mut mouse_wheel: EventReader<MouseWheel>,
     mut camera_query: Query<&mut Transform, With<DebugCamera>>,
     time: Res<Time>,
+    free_camera_mode: Res<FreeCameraMode>,
 ) {
     if let Ok(mut transform) = camera_query.get_single_mut() {
         let rotate_speed = 1.0;
-        let mouse_sensitivity = 0.003;
         let pan_sensitivity = 0.05;
         let zoom_sensitivity = 1.0;
         let dt = time.delta_secs();
 
-        // Mouse wheel scroll for zoom (forward/backward movement)
-        for wheel in mouse_wheel.read() {
-            let zoom_amount = wheel.y * zoom_sensitivity;
-            let forward = transform.forward();
-            transform.translation += forward * zoom_amount;
+        // Mouse wheel scroll for zoom (forward/backward movement) - only in free camera mode
+        if free_camera_mode.enabled {
+            for wheel in mouse_wheel.read() {
+                let zoom_amount = wheel.y * zoom_sensitivity;
+                let forward = transform.forward();
+                transform.translation += forward * zoom_amount;
+            }
+        } else {
+            // Clear the event reader to prevent event buildup
+            mouse_wheel.clear();
         }
 
-        // Middle mouse button drag for XY plane panning
-        if mouse_button.pressed(MouseButton::Middle) {
+        // Middle mouse button drag for XY plane panning - only in free camera mode
+        if free_camera_mode.enabled && mouse_button.pressed(MouseButton::Middle) {
             for motion in mouse_motion.read() {
                 let pan_x = -motion.delta.x * pan_sensitivity;
                 let pan_y = motion.delta.y * pan_sensitivity;
@@ -110,53 +148,74 @@ fn debug_camera_controls(
             }
         }
 
-        // Left mouse button drag for orbit rotation around play zone center
+        // Left mouse button drag - orbit in default mode, first-person rotation in free camera mode
         if mouse_button.pressed(MouseButton::Left) {
             for motion in mouse_motion.read() {
-                let orbit_center = Vec3::new(0.0, 0.0, 1.0); // Center of play zone at ground level
-                let orbit_sensitivity = 0.005;
+                if free_camera_mode.enabled {
+                    // Free camera mode: first-person rotation
+                    let rotation_sensitivity = 0.003;
+                    let yaw = -motion.delta.x * rotation_sensitivity;
+                    let pitch = -motion.delta.y * rotation_sensitivity;
 
-                let yaw = -motion.delta.x * orbit_sensitivity;
-                let pitch = -motion.delta.y * orbit_sensitivity;
+                    // Apply yaw rotation around world Z axis
+                    let yaw_rotation = Quat::from_rotation_z(yaw);
+                    transform.rotation = yaw_rotation * transform.rotation;
 
-                // Calculate vector from orbit center to camera
-                let offset = transform.translation - orbit_center;
+                    // Apply pitch rotation around camera's local right axis
+                    let pitch_rotation = Quat::from_axis_angle(transform.right().into(), pitch);
+                    transform.rotation = pitch_rotation * transform.rotation;
 
-                // Apply yaw rotation (around Z axis) at orbit center
-                let yaw_rotation = Quat::from_rotation_z(yaw);
-                let rotated_offset = yaw_rotation * offset;
+                    // Normalize to prevent drift
+                    transform.rotation = transform.rotation.normalize();
+                } else {
+                    // Default mode: orbit around play zone center
+                    let orbit_center = Vec3::new(0.0, 0.0, 1.0); // Center of play zone at ground level
+                    let orbit_sensitivity = 0.005;
 
-                // Apply pitch rotation (around camera's right axis at orbit center)
-                let right = transform.right();
-                let pitch_rotation = Quat::from_axis_angle(*right, pitch);
-                let final_offset = pitch_rotation * rotated_offset;
+                    let yaw = -motion.delta.x * orbit_sensitivity;
+                    let pitch = -motion.delta.y * orbit_sensitivity;
 
-                // Update camera position and make it look at the orbit center
-                transform.translation = orbit_center + final_offset;
-                transform.look_at(orbit_center, Vec3::Z);
+                    // Calculate vector from orbit center to camera
+                    let offset = transform.translation - orbit_center;
+
+                    // Apply yaw rotation (around Z axis) at orbit center
+                    let yaw_rotation = Quat::from_rotation_z(yaw);
+                    let rotated_offset = yaw_rotation * offset;
+
+                    // Apply pitch rotation (around camera's right axis at orbit center)
+                    let right = transform.right();
+                    let pitch_rotation = Quat::from_axis_angle(*right, pitch);
+                    let final_offset = pitch_rotation * rotated_offset;
+
+                    // Update camera position and make it look at the orbit center
+                    transform.translation = orbit_center + final_offset;
+                    transform.look_at(orbit_center, Vec3::Z);
+                }
             }
         }
 
-        // Camera rotation (Arrow keys when in debug mode)
-        if keyboard_input.pressed(KeyCode::ArrowUp) {
-            transform.rotate_local_x(rotate_speed * dt);
-        }
-        if keyboard_input.pressed(KeyCode::ArrowDown) {
-            transform.rotate_local_x(-rotate_speed * dt);
-        }
-        if keyboard_input.pressed(KeyCode::ArrowLeft) {
-            transform.rotate_z(rotate_speed * dt);
-        }
-        if keyboard_input.pressed(KeyCode::ArrowRight) {
-            transform.rotate_z(-rotate_speed * dt);
-        }
+        // Camera rotation (Arrow keys when in free camera mode)
+        if free_camera_mode.enabled {
+            if keyboard_input.pressed(KeyCode::ArrowUp) {
+                transform.rotate_local_x(rotate_speed * dt);
+            }
+            if keyboard_input.pressed(KeyCode::ArrowDown) {
+                transform.rotate_local_x(-rotate_speed * dt);
+            }
+            if keyboard_input.pressed(KeyCode::ArrowLeft) {
+                transform.rotate_z(rotate_speed * dt);
+            }
+            if keyboard_input.pressed(KeyCode::ArrowRight) {
+                transform.rotate_z(-rotate_speed * dt);
+            }
 
-        // U/O keys for vertical movement
-        if keyboard_input.pressed(KeyCode::KeyU) {
-            transform.translation += Vec3::Z * 10.0 * dt;
-        }
-        if keyboard_input.pressed(KeyCode::KeyO) {
-            transform.translation -= Vec3::Z * 10.0 * dt;
+            // U/O keys for vertical movement
+            if keyboard_input.pressed(KeyCode::KeyU) {
+                transform.translation += Vec3::Z * 10.0 * dt;
+            }
+            if keyboard_input.pressed(KeyCode::KeyO) {
+                transform.translation -= Vec3::Z * 10.0 * dt;
+            }
         }
     }
 }
