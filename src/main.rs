@@ -483,6 +483,7 @@ fn handle_level_change(
     training_mode: Res<TrainingMode>,
     mut level: ResMut<Level>,
     mut config: ResMut<GameConfig>,
+    mut projectile_timer: ResMut<game::projectile::ProjectileSpawnTimer>,
     mut game_state: ResMut<game::collision::GameState>,
     mut player_query: Query<
         (
@@ -505,6 +506,10 @@ fn handle_level_change(
 
         // Update game config for new level
         *config = GameConfig::for_level(*level);
+
+        // Update projectile spawn timer with new interval
+        projectile_timer.timer.set_duration(std::time::Duration::from_secs_f32(config.projectile_spawn_interval));
+        projectile_timer.timer.reset();
 
         // Reset game state
         game_state.is_game_over = false;
@@ -541,6 +546,7 @@ fn handle_rl_commands(
     mut training_mode: ResMut<TrainingMode>,
     mut level: ResMut<Level>,
     mut config: ResMut<GameConfig>,
+    mut projectile_timer: ResMut<game::projectile::ProjectileSpawnTimer>,
     projectile_query: Query<Entity, With<game::projectile::Projectile>>,
     mut commands: Commands,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -571,6 +577,10 @@ fn handle_rl_commands(
                 // Update level and config
                 *level = new_level;
                 *config = GameConfig::for_level(new_level);
+
+                // Update projectile spawn timer with new interval
+                projectile_timer.timer.set_duration(std::time::Duration::from_secs_f32(config.projectile_spawn_interval));
+                projectile_timer.timer.reset();
 
                 // Reset game state
                 game_state.is_game_over = false;

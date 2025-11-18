@@ -48,6 +48,7 @@ pub struct GameConfig {
     pub projectile_spawn_interval: f32,
     pub projectile_spawn_distance: f32,
     pub max_projectiles: usize,
+    pub random_spawn_position: bool,  // If true, spawn from random positions on a circle
 }
 
 impl GameConfig {
@@ -70,19 +71,21 @@ impl GameConfig {
             projectile_spawn_interval: 2.0,
             projectile_spawn_distance: 20.0,
             max_projectiles: 10,
+            random_spawn_position: false,     // Spawn from fixed +Y side
         }
     }
 
     /// Level 2: Hard difficulty
-    /// Faster projectiles, more frequent spawning, and more projectiles
+    /// Faster projectiles, more frequent spawning, more projectiles, and random spawn positions
     fn level2() -> Self {
         Self {
             player_speed: 5.0,               // Keep player speed same
             player_start_height: 1.0,
             projectile_speed: 4.5,            // 50% faster projectiles
-            projectile_spawn_interval: 1.2,   // 40% faster spawning
+            projectile_spawn_interval: 0.5,   // 4x faster spawning (was 2.0s, now 0.5s)
             projectile_spawn_distance: 20.0,
-            max_projectiles: 15,              // 50% more projectiles
+            max_projectiles: 25,              // 2.5x more projectiles (was 10, now 25)
+            random_spawn_position: true,      // Spawn from random positions in a 120° fan
         }
     }
 }
