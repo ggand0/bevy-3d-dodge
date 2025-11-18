@@ -48,9 +48,17 @@ fn spawn_player(
 
 fn player_movement(
     keyboard_input: Res<ButtonInput<KeyCode>>,
+    control_mode: Res<crate::rl::environment::ControlMode>,
     mut query: Query<&mut Velocity, With<Player>>,
     config: Res<GameConfig>,
 ) {
+    use crate::rl::environment::ControlMode;
+
+    // Only process keyboard input in Human control mode
+    if *control_mode != ControlMode::Human {
+        return;
+    }
+
     if let Ok(mut velocity) = query.get_single_mut() {
         let mut direction = Vec2::ZERO;
 
@@ -76,12 +84,13 @@ fn player_movement(
             direction.y -= 1.0;
         }
 
-        // Only update velocity if keyboard input detected (don't override RL actions)
-        if keyboard_input.get_pressed().next().is_some() {
-            if direction.length() > 0.0 {
-                direction = direction.normalize();
-            }
+        // Normalize direction and apply to velocity
+        if direction.length() > 0.0 {
+            direction = direction.normalize();
             velocity.0 = direction * config.player_speed;
+        } else {
+            // No keys pressed - stop the player
+            velocity.0 = Vec2::ZERO;
         }
     }
 }

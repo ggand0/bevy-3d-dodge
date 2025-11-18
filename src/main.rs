@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use config::GameConfig;
 use tokio::sync::mpsc;
 use rl::api::{EnvCommand, SharedEnvState, start_api_server};
-use rl::environment::RLEnvironmentState;
+use rl::environment::{RLEnvironmentState, ControlMode};
 
 fn main() {
     // Create channel for RL API commands
@@ -29,6 +29,7 @@ fn main() {
         }))
         .insert_resource(GameConfig::default())
         .insert_resource(RLEnvironmentState::default())
+        .insert_resource(ControlMode::default())
         .insert_non_send_resource(command_rx)
         .insert_resource(shared_state)
         .add_plugins(game::GamePlugin)
@@ -409,6 +410,7 @@ fn handle_rl_commands(
     mut player_query: Query<(&mut Transform, &mut game::player::Velocity), With<game::player::Player>>,
     mut game_state: ResMut<game::collision::GameState>,
     mut env_state: ResMut<RLEnvironmentState>,
+    mut control_mode: ResMut<ControlMode>,
     projectile_query: Query<Entity, With<game::projectile::Projectile>>,
     mut commands: Commands,
     config: Res<GameConfig>,
@@ -418,6 +420,8 @@ fn handle_rl_commands(
     while let Ok(command) = command_rx.try_recv() {
         match command {
             EnvCommand::Reset => {
+                // Switch to RL agent control
+                *control_mode = ControlMode::RLAgent;
                 // Reset game state
                 game_state.is_game_over = false;
                 env_state.episode_steps = 0;
