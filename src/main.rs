@@ -282,7 +282,7 @@ fn setup_scene(
         },
     ));
 
-    // Level indicator (top right)
+    // Level indicator (top right, below control legend)
     commands.spawn((
         Text::new("Level 1 (Baseline)"),
         TextFont {
@@ -292,7 +292,7 @@ fn setup_scene(
         TextColor(Color::srgb(0.3, 1.0, 0.3)), // Green color
         Node {
             position_type: PositionType::Absolute,
-            top: Val::Px(10.0),
+            top: Val::Px(40.0),
             right: Val::Px(10.0),
             ..default()
         },
