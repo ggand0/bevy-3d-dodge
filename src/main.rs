@@ -281,6 +281,24 @@ fn setup_scene(
         },
     ));
 
+    // Training mode indicator (shown when training mode is enabled)
+    commands.spawn((
+        Text::new("TRAINING MODE - Agent Control Active"),
+        TextFont {
+            font_size: 18.0,
+            ..default()
+        },
+        TextColor(Color::srgb(1.0, 0.3, 0.3)), // Red color
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(35.0),
+            left: Val::Px(10.0),
+            display: Display::None,
+            ..default()
+        },
+        TrainingModeText,
+    ));
+
     // Camera help text for free camera mode
     commands.spawn((
         Text::new("Free Cam: LMB+Drag: Look | MMB+Drag: Pan | Scroll: Zoom | UO: Up/Down"),
@@ -291,7 +309,7 @@ fn setup_scene(
         TextColor(Color::srgb(1.0, 1.0, 0.0)),
         Node {
             position_type: PositionType::Absolute,
-            top: Val::Px(35.0),
+            top: Val::Px(60.0),
             left: Val::Px(10.0),
             ..default()
         },
@@ -326,6 +344,9 @@ fn setup_scene(
 struct GameOverText;
 
 #[derive(Component)]
+struct TrainingModeText;
+
+#[derive(Component)]
 struct CameraDebugText;
 
 #[derive(Component)]
@@ -335,12 +356,23 @@ fn update_ui(
     game_state: Res<game::collision::GameState>,
     debug_mode: Res<game::camera::CameraDebugMode>,
     free_camera_mode: Res<game::camera::FreeCameraMode>,
-    mut game_over_query: Query<&mut Node, (With<GameOverText>, Without<CameraDebugText>)>,
-    mut debug_text_query: Query<&mut Node, (With<CameraDebugText>, Without<GameOverText>)>,
+    training_mode: Res<TrainingMode>,
+    mut game_over_query: Query<&mut Node, (With<GameOverText>, Without<CameraDebugText>, Without<TrainingModeText>)>,
+    mut training_text_query: Query<&mut Node, (With<TrainingModeText>, Without<CameraDebugText>, Without<GameOverText>)>,
+    mut debug_text_query: Query<&mut Node, (With<CameraDebugText>, Without<GameOverText>, Without<TrainingModeText>)>,
     mut axis_query: Query<&mut Visibility, With<CoordinateAxis>>,
 ) {
     if let Ok(mut node) = game_over_query.get_single_mut() {
         node.display = if game_state.is_game_over {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+
+    // Training mode indicator is visible when training mode is enabled
+    if let Ok(mut node) = training_text_query.get_single_mut() {
+        node.display = if training_mode.enabled {
             Display::Flex
         } else {
             Display::None
