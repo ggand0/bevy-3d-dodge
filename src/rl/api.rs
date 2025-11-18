@@ -39,6 +39,8 @@ impl Default for SharedEnvState {
 pub enum EnvCommand {
     Reset,
     Step { action: usize },
+    StartTraining,
+    EndTraining,
 }
 
 /// API server state
@@ -206,6 +208,28 @@ async fn action_space_handler() -> Json<ActionSpaceResponse> {
     })
 }
 
+async fn start_training_handler(
+    State(state): State<ApiState>,
+) -> Result<StatusCode, AppError> {
+    state
+        .command_tx
+        .send(EnvCommand::StartTraining)
+        .map_err(|_| AppError::InternalError("Failed to send start training command".to_string()))?;
+
+    Ok(StatusCode::OK)
+}
+
+async fn end_training_handler(
+    State(state): State<ApiState>,
+) -> Result<StatusCode, AppError> {
+    state
+        .command_tx
+        .send(EnvCommand::EndTraining)
+        .map_err(|_| AppError::InternalError("Failed to send end training command".to_string()))?;
+
+    Ok(StatusCode::OK)
+}
+
 // ============================================================================
 // Error Handling
 // ============================================================================
@@ -254,6 +278,8 @@ pub fn create_router(
         .route("/step", post(step_handler))
         .route("/observation_space", get(observation_space_handler))
         .route("/action_space", get(action_space_handler))
+        .route("/start_training", post(start_training_handler))
+        .route("/end_training", post(end_training_handler))
         .layer(cors)
         .with_state(api_state)
 }

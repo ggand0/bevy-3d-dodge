@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use config::GameConfig;
 use tokio::sync::mpsc;
 use rl::api::{EnvCommand, SharedEnvState, start_api_server};
-use rl::environment::{RLEnvironmentState, ControlMode};
+use rl::environment::{RLEnvironmentState, ControlMode, TrainingMode};
 
 fn main() {
     // Create channel for RL API commands
@@ -30,6 +30,7 @@ fn main() {
         .insert_resource(GameConfig::default())
         .insert_resource(RLEnvironmentState::default())
         .insert_resource(ControlMode::default())
+        .insert_resource(TrainingMode::default())
         .insert_non_send_resource(command_rx)
         .insert_resource(shared_state)
         .add_plugins(game::GamePlugin)
@@ -367,6 +368,7 @@ fn update_ui(
 
 fn handle_reset(
     keyboard_input: Res<ButtonInput<KeyCode>>,
+    training_mode: Res<TrainingMode>,
     mut game_state: ResMut<game::collision::GameState>,
     mut player_query: Query<
         (
@@ -383,7 +385,8 @@ fn handle_reset(
     config: Res<GameConfig>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    if keyboard_input.just_pressed(KeyCode::KeyR) {
+    // Disable R key reset during training mode to prevent accidental interruptions
+    if keyboard_input.just_pressed(KeyCode::KeyR) && !training_mode.enabled {
         // Reset game state
         game_state.is_game_over = false;
 
@@ -414,13 +417,14 @@ fn handle_reset(
     }
 }
 
-/// Handle RL API commands (reset, step)
+/// Handle RL API commands (reset, step, start/end training)
 fn handle_rl_commands(
     mut command_rx: NonSendMut<mpsc::UnboundedReceiver<EnvCommand>>,
     mut player_query: Query<(&mut Transform, &mut game::player::Velocity, &MeshMaterial3d<StandardMaterial>), With<game::player::Player>>,
     mut game_state: ResMut<game::collision::GameState>,
     mut env_state: ResMut<RLEnvironmentState>,
     mut control_mode: ResMut<ControlMode>,
+    mut training_mode: ResMut<TrainingMode>,
     projectile_query: Query<Entity, With<game::projectile::Projectile>>,
     mut commands: Commands,
     config: Res<GameConfig>,
@@ -429,6 +433,15 @@ fn handle_rl_commands(
     // Process all pending commands
     while let Ok(command) = command_rx.try_recv() {
         match command {
+            EnvCommand::StartTraining => {
+                training_mode.enabled = true;
+                info!("Training mode ENABLED - keyboard reset (R) disabled");
+            }
+            EnvCommand::EndTraining => {
+                training_mode.enabled = false;
+                *control_mode = ControlMode::Human;
+                info!("Training mode DISABLED - returning to human control");
+            }
             EnvCommand::Reset => {
                 // Switch to RL agent control
                 *control_mode = ControlMode::RLAgent;

@@ -115,9 +115,37 @@ class BevyDodgeEnv(gym.Env):
 
         return observation, reward, terminated, truncated, info
 
+    def start_training(self) -> None:
+        """Enable training mode - disables R key reset to prevent accidental interruptions.
+
+        Call this at the beginning of training to ensure the game won't be accidentally
+        reset via keyboard during RL training. Camera controls remain enabled for observation.
+        """
+        try:
+            response = requests.post(f"{self.base_url}/start_training", timeout=self.timeout)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            raise RuntimeError(f"Failed to start training mode: {e}") from e
+
+    def end_training(self) -> None:
+        """Disable training mode - re-enables R key reset and returns to human control.
+
+        Call this at the end of training to restore normal keyboard controls.
+        """
+        try:
+            response = requests.post(f"{self.base_url}/end_training", timeout=self.timeout)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            raise RuntimeError(f"Failed to end training mode: {e}") from e
+
     def close(self) -> None:
-        """Close the environment (no cleanup needed for HTTP client)."""
-        pass
+        """Close the environment and disable training mode if enabled."""
+        try:
+            # Ensure training mode is disabled when environment is closed
+            self.end_training()
+        except Exception:
+            # Ignore errors during cleanup
+            pass
 
     def _post(self, url: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Send POST request to API.

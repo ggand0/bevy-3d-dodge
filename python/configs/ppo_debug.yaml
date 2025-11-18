@@ -1,0 +1,31 @@
+# PPO Debug Configuration - Fast iteration for testing
+# Usage: python python/train_ppo.py --config python/configs/ppo_debug.yaml
+
+algorithm: PPO
+port: 8000
+
+# Training
+total_timesteps: 1000  # Very short for quick testing
+learning_rate: 0.0003
+
+# PPO-specific
+n_steps: 128           # Smaller rollout buffer for faster updates
+batch_size: 32         # Smaller batch
+n_epochs: 4            # Fewer epochs per update
+gamma: 0.99
+gae_lambda: 0.95
+clip_range: 0.2
+ent_coef: 0.01
+vf_coef: 0.5
+max_grad_norm: 0.5
+
+# Network architecture
+net_arch: [64, 64]     # Smaller network for faster training
+
+# Checkpointing & Evaluation
+save_freq: 500         # Save every 500 steps (twice during training)
+eval_freq: 500         # Evaluate every 500 steps
+n_eval_episodes: 3     # Only 3 episodes for quick eval
+
+# Device
+device: auto

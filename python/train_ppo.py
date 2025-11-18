@@ -81,6 +81,12 @@ def train(config: DQNConfig, config_name: Optional[str] = None, verbose: int = 1
     print(f"  Action space: {env.action_space}")
     print()
 
+    # Enable training mode to prevent accidental keyboard interruptions
+    print("Enabling training mode...")
+    env.envs[0].unwrapped.start_training()
+    print("✓ Training mode enabled - R key disabled, camera controls still available")
+    print()
+
     # Create evaluation environment
     eval_env = DummyVecEnv([lambda: make_env(config.port)])
 
@@ -163,6 +169,14 @@ def train(config: DQNConfig, config_name: Optional[str] = None, verbose: int = 1
         final_path = save_path / "final_model"
         model.save(final_path)
         print(f"\n✓ Final model saved to {final_path}")
+
+        # Disable training mode
+        print("\nDisabling training mode...")
+        try:
+            env.envs[0].unwrapped.end_training()
+            print("✓ Training mode disabled - returning to human control")
+        except Exception as e:
+            print(f"⚠ Failed to disable training mode: {e}")
 
     # Close environments
     env.close()

@@ -13,6 +13,12 @@ pub enum ControlMode {
     RLAgent, // RL agent control via API
 }
 
+/// Training mode to prevent accidental interruptions during RL training
+#[derive(Resource, Default, Clone, Copy, PartialEq, Eq)]
+pub struct TrainingMode {
+    pub enabled: bool,
+}
+
 /// RL environment state management
 #[derive(Resource, Default)]
 pub struct RLEnvironmentState {
