@@ -1,0 +1,31 @@
+# PPO Baseline Configuration
+# PPO is often more stable and sample-efficient than DQN
+# Good for environments with high variance
+
+algorithm: PPO
+
+# Training parameters
+total_timesteps: 300000        # Same as DQN for comparison
+learning_rate: 0.0003          # PPO typical LR (higher than DQN)
+batch_size: 64                 # PPO uses larger batches
+n_steps: 2048                  # Steps per rollout (PPO-specific)
+n_epochs: 10                   # Optimization epochs per rollout
+gamma: 0.99                    # Discount factor
+gae_lambda: 0.95               # GAE parameter for advantage estimation
+
+# PPO-specific parameters
+clip_range: 0.2                # PPO clip range
+ent_coef: 0.01                 # Entropy coefficient (encourages exploration)
+vf_coef: 0.5                   # Value function coefficient
+max_grad_norm: 0.5             # Gradient clipping
+
+# Network architecture
+net_arch: [256, 256]           # Same as DQN for fair comparison
+
+# Evaluation
+n_eval_episodes: 10            # Episodes per evaluation
+eval_freq: 5000                # Evaluate every N steps
+
+# Environment
+port: 8000
+max_episode_steps: 1000

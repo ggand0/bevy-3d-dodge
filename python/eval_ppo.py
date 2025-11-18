@@ -1,0 +1,248 @@
+#!/usr/bin/env python3
+"""Evaluate trained PPO model on Bevy dodge game.
+
+Usage:
+    python eval_ppo.py <model_path> [--episodes 20] [--render]
+"""
+
+import argparse
+import time
+from pathlib import Path
+
+import numpy as np
+from stable_baselines3 import PPO
+
+from bevy_dodge_env import BevyDodgeEnv
+
+
+def evaluate_agent(
+    model_path: str,
+    n_episodes: int = 10,
+    max_steps: int = 1000,
+    port: int = 8000,
+    deterministic: bool = True,
+    render: bool = False,
+):
+    """Evaluate trained PPO agent.
+
+    Args:
+        model_path: Path to saved model
+        n_episodes: Number of episodes to evaluate
+        max_steps: Maximum steps per episode
+        port: Bevy server port
+        deterministic: Use deterministic policy (no exploration)
+        render: Whether to render (not used, kept for compatibility)
+
+    Returns:
+        Dictionary with evaluation statistics
+    """
+    # Load model
+    print(f"Loading model from {model_path}...")
+    model = PPO.load(model_path)
+    print(f"✓ Model loaded (policy: {model.policy.__class__.__name__})")
+    print()
+
+    # Create environment
+    env = BevyDodgeEnv(port=port)
+    print(f"✓ Connected to Bevy server at http://127.0.0.1:{port}")
+    print(f"  Observation space: {env.observation_space}")
+    print(f"  Action space: {env.action_space}")
+    print()
+
+    # Run evaluation episodes
+    episode_rewards = []
+    episode_lengths = []
+    episode_info = []
+
+    print(f"Running {n_episodes} evaluation episodes...")
+    print(f"Mode: {'deterministic' if deterministic else 'stochastic'}")
+    print()
+
+    for episode in range(n_episodes):
+        obs, info = env.reset()
+        episode_reward = 0
+        episode_length = 0
+        done = False
+        truncated = False
+
+        start_time = time.time()
+
+        while not (done or truncated) and episode_length < max_steps:
+            # Get action from model
+            action, _states = model.predict(obs, deterministic=deterministic)
+
+            # Step environment
+            obs, reward, done, truncated, info = env.step(action)
+
+            episode_reward += reward
+            episode_length += 1
+
+        elapsed = time.time() - start_time
+
+        # Store results
+        episode_rewards.append(episode_reward)
+        episode_lengths.append(episode_length)
+        episode_info.append({
+            "reward": episode_reward,
+            "length": episode_length,
+            "success": episode_length >= max_steps,
+            "elapsed": elapsed,
+        })
+
+        # Print episode summary
+        success_marker = "✓" if episode_length >= max_steps else "✗"
+        print(f"Episode {episode + 1:2d}: {success_marker} "
+              f"Reward: {episode_reward:7.2f}, "
+              f"Steps: {episode_length:4d}, "
+              f"Time: {elapsed:5.1f}s")
+
+    env.close()
+
+    # Calculate statistics
+    rewards_array = np.array(episode_rewards)
+    lengths_array = np.array(episode_lengths)
+    success_count = sum(1 for info in episode_info if info["success"])
+
+    stats = {
+        "n_episodes": n_episodes,
+        "mean_reward": np.mean(rewards_array),
+        "std_reward": np.std(rewards_array),
+        "min_reward": np.min(rewards_array),
+        "max_reward": np.max(rewards_array),
+        "mean_length": np.mean(lengths_array),
+        "std_length": np.std(lengths_array),
+        "min_length": np.min(lengths_array),
+        "max_length": np.max(lengths_array),
+        "success_rate": success_count / n_episodes * 100,
+        "success_count": success_count,
+        "episode_info": episode_info,
+    }
+
+    return stats
+
+
+def print_summary(stats: dict):
+    """Print evaluation summary statistics."""
+    print()
+    print("=" * 70)
+    print("Evaluation Summary")
+    print("=" * 70)
+    print(f"Total episodes:        {stats['n_episodes']}")
+    print()
+    print(f"Mean reward:           {stats['mean_reward']:.2f} ± {stats['std_reward']:.2f}")
+    print(f"Reward range:          [{stats['min_reward']:.2f}, {stats['max_reward']:.2f}]")
+    print()
+    print(f"Mean episode length:   {stats['mean_length']:.1f} ± {stats['std_length']:.1f} steps")
+    print(f"Length range:          [{stats['min_length']}, {stats['max_length']}] steps")
+    print()
+    print(f"Success rate:          {stats['success_rate']:.1f}% "
+          f"({stats['success_count']}/{stats['n_episodes']} episodes)")
+    print("=" * 70)
+    print()
+
+    # Episode breakdown
+    if stats['n_episodes'] <= 50:
+        print("Episode Breakdown:")
+        print("-" * 70)
+        success_episodes = [i for i, info in enumerate(stats['episode_info']) if info['success']]
+        failed_episodes = [i for i, info in enumerate(stats['episode_info']) if not info['success']]
+
+        if success_episodes:
+            print(f"✓ Success ({len(success_episodes)}): Episodes {', '.join(map(str, [i+1 for i in success_episodes]))}")
+        if failed_episodes:
+            print(f"✗ Failed  ({len(failed_episodes)}): Episodes {', '.join(map(str, [i+1 for i in failed_episodes]))}")
+        print("-" * 70)
+        print()
+
+
+def main():
+    """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description="Evaluate trained PPO model",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+    # Evaluate best model with 20 episodes:
+    python eval_ppo.py results/ppo_baseline/20251117_213229/models/best/best_model.zip --episodes 20
+
+    # Quick test with 5 episodes:
+    python eval_ppo.py results/ppo_baseline/20251117_213229/models/final_model.zip --episodes 5
+        """
+    )
+
+    parser.add_argument(
+        "model_path",
+        type=str,
+        help="Path to saved model (.zip file)",
+    )
+    parser.add_argument(
+        "--episodes",
+        type=int,
+        default=10,
+        help="Number of evaluation episodes (default: 10)",
+    )
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=1000,
+        help="Maximum steps per episode (default: 1000)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Bevy server port (default: 8000)",
+    )
+    parser.add_argument(
+        "--stochastic",
+        action="store_true",
+        help="Use stochastic policy instead of deterministic",
+    )
+    parser.add_argument(
+        "--render",
+        action="store_true",
+        help="Render episodes (Bevy handles rendering)",
+    )
+
+    args = parser.parse_args()
+
+    # Validate model path
+    model_path = Path(args.model_path)
+    if not model_path.exists():
+        print(f"Error: Model file not found: {model_path}")
+        return
+
+    # Print header
+    print("=" * 70)
+    print("PPO Agent Evaluation - Bevy 3D Dodge Game")
+    print("=" * 70)
+    print(f"Model: {args.model_path}")
+    print(f"Episodes: {args.episodes}")
+    print(f"Max steps: {args.max_steps}")
+    print(f"Mode: {'stochastic' if args.stochastic else 'deterministic'}")
+    print()
+
+    try:
+        # Run evaluation
+        stats = evaluate_agent(
+            model_path=str(model_path),
+            n_episodes=args.episodes,
+            max_steps=args.max_steps,
+            port=args.port,
+            deterministic=not args.stochastic,
+            render=args.render,
+        )
+
+        # Print summary
+        print_summary(stats)
+
+    except KeyboardInterrupt:
+        print("\n\nEvaluation interrupted by user")
+    except Exception as e:
+        print(f"\n✗ Error during evaluation: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+if __name__ == "__main__":
+    main()

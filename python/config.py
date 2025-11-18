@@ -8,21 +8,33 @@ import yaml
 
 @dataclass
 class DQNConfig:
-    """DQN training hyperparameters."""
+    """Training hyperparameters for DQN and PPO."""
+
+    # Algorithm
+    algorithm: str = "DQN"  # "DQN" or "PPO"
 
     # Training
     total_timesteps: int = 100_000
     learning_rate: float = 1e-4
-    buffer_size: int = 50_000
-    learning_starts: int = 1000
     batch_size: int = 32
     gamma: float = 0.99
-    target_update_interval: int = 1000
 
-    # Exploration
-    exploration_fraction: float = 0.3
-    exploration_initial_eps: float = 1.0
-    exploration_final_eps: float = 0.05
+    # DQN-specific
+    buffer_size: Optional[int] = 50_000
+    learning_starts: Optional[int] = 1000
+    target_update_interval: Optional[int] = 1000
+    exploration_fraction: Optional[float] = 0.3
+    exploration_initial_eps: Optional[float] = 1.0
+    exploration_final_eps: Optional[float] = 0.05
+
+    # PPO-specific
+    n_steps: Optional[int] = 2048
+    n_epochs: Optional[int] = 10
+    gae_lambda: Optional[float] = 0.95
+    clip_range: Optional[float] = 0.2
+    ent_coef: Optional[float] = 0.01
+    vf_coef: Optional[float] = 0.5
+    max_grad_norm: Optional[float] = 0.5
 
     # Network architecture (MlpPolicy default: [64, 64])
     # Can override with policy_kwargs=dict(net_arch=[256, 256])
