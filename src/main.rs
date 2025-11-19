@@ -3,8 +3,10 @@ mod game;
 mod rl;
 
 use bevy::prelude::*;
-use config::{GameConfig, Level};
+use config::{GameConfig, Level, SharedGameConfig};
 use tokio::sync::mpsc;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use rl::api::{EnvCommand, SharedEnvState, start_api_server};
 use rl::environment::{RLEnvironmentState, ControlMode, TrainingMode};
 
@@ -15,8 +17,12 @@ fn main() {
     // Create shared state for RL API
     let shared_state = SharedEnvState::default();
 
+    // Create shared game config for API server
+    let game_config = Arc::new(Mutex::new(GameConfig::default()));
+    let shared_config = SharedGameConfig(game_config.clone());
+
     // Start HTTP API server on port 8000
-    start_api_server(8000, shared_state.clone(), command_tx);
+    start_api_server(8000, shared_state.clone(), command_tx, game_config);
 
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -34,9 +40,16 @@ fn main() {
         .insert_resource(TrainingMode::default())
         .insert_non_send_resource(command_rx)
         .insert_resource(shared_state)
+        .insert_resource(shared_config)
         .add_plugins(game::GamePlugin)
         .add_systems(Startup, setup_scene)
-        .add_systems(Update, (handle_reset, handle_level_change, update_ui, handle_rl_commands, update_rl_state))
+        .add_systems(Update, (
+            handle_reset,
+            handle_level_change,
+            update_ui,
+            handle_rl_commands,
+            update_rl_state
+        ))
         .run();
 }
 
@@ -539,13 +552,14 @@ fn handle_level_change(
 /// Handle RL API commands (reset, step, start/end training, set level)
 fn handle_rl_commands(
     mut command_rx: NonSendMut<mpsc::UnboundedReceiver<EnvCommand>>,
-    mut player_query: Query<(&mut Transform, &mut game::player::Velocity, &MeshMaterial3d<StandardMaterial>), With<game::player::Player>>,
+    mut player_query: Query<(&mut Transform, &mut game::player::Velocity, &mut game::player::PlayerTilt, &MeshMaterial3d<StandardMaterial>), With<game::player::Player>>,
     mut game_state: ResMut<game::collision::GameState>,
     mut env_state: ResMut<RLEnvironmentState>,
     mut control_mode: ResMut<ControlMode>,
     mut training_mode: ResMut<TrainingMode>,
     mut level: ResMut<Level>,
     mut config: ResMut<GameConfig>,
+    shared_config: Res<config::SharedGameConfig>,
     mut projectile_timer: ResMut<game::projectile::ProjectileSpawnTimer>,
     projectile_query: Query<Entity, With<game::projectile::Projectile>>,
     mut commands: Commands,
@@ -578,6 +592,10 @@ fn handle_rl_commands(
                 *level = new_level;
                 *config = GameConfig::for_level(new_level);
 
+                // Sync shared config for API server
+                let mut shared = shared_config.0.blocking_lock();
+                *shared = config.clone();
+
                 // Update projectile spawn timer with new interval
                 projectile_timer.timer.set_duration(std::time::Duration::from_secs_f32(config.projectile_spawn_interval));
                 projectile_timer.timer.reset();
@@ -589,9 +607,11 @@ fn handle_rl_commands(
                 env_state.last_reward = 0.0;
 
                 // Reset player
-                if let Ok((mut transform, mut velocity, material_handle)) = player_query.get_single_mut() {
+                if let Ok((mut transform, mut velocity, mut tilt, material_handle)) = player_query.get_single_mut() {
                     transform.translation = Vec3::new(0.0, 0.0, config.player_start_height);
                     velocity.0 = Vec2::ZERO;
+                    tilt.pitch = 0.0;
+                    tilt.roll = 0.0;
 
                     // Reset player color to green
                     if let Some(material) = materials.get_mut(&material_handle.0) {
@@ -616,9 +636,11 @@ fn handle_rl_commands(
                 env_state.last_reward = 0.0;
 
                 // Reset player
-                if let Ok((mut transform, mut velocity, material_handle)) = player_query.get_single_mut() {
+                if let Ok((mut transform, mut velocity, mut tilt, material_handle)) = player_query.get_single_mut() {
                     transform.translation = Vec3::new(0.0, 0.0, config.player_start_height);
                     velocity.0 = Vec2::ZERO;
+                    tilt.pitch = 0.0;
+                    tilt.roll = 0.0;
 
                     // Reset player color to green
                     if let Some(material) = materials.get_mut(&material_handle.0) {
@@ -633,11 +655,22 @@ fn handle_rl_commands(
 
                 info!("RL Environment reset");
             }
-            EnvCommand::Step { action } => {
-                // Parse and apply action
+            EnvCommand::StepDiscrete { action } => {
+                // Parse and apply discrete action
                 if let Ok(rl_action) = rl::action::RLAction::from_index(action) {
-                    if let Ok((_, mut velocity, _)) = player_query.get_single_mut() {
+                    if let Ok((_, mut velocity, _, _)) = player_query.get_single_mut() {
                         rl::action::apply_action(rl_action, &mut velocity, &config);
+                    }
+                }
+
+                // Increment step counter
+                env_state.episode_steps += 1;
+            }
+            EnvCommand::StepContinuous { action } => {
+                // Parse and apply continuous action
+                if let Ok(continuous_action) = rl::action::ContinuousAction::from_array(action) {
+                    if let Ok((_, mut velocity, mut tilt, _)) = player_query.get_single_mut() {
+                        rl::action::apply_continuous_action(continuous_action, &mut velocity, &mut tilt, &config);
                     }
                 }
 
@@ -674,20 +707,10 @@ fn update_rl_state(
     // Create step info
     let info = rl::environment::create_step_info(&env_state, projectile_query.iter().count());
 
-    // Update shared state
-    if let Ok(mut obs) = shared_state.observation.lock() {
-        *obs = observation;
-    }
-    if let Ok(mut r) = shared_state.reward.lock() {
-        *r = reward;
-    }
-    if let Ok(mut d) = shared_state.done.lock() {
-        *d = done;
-    }
-    if let Ok(mut t) = shared_state.truncated.lock() {
-        *t = truncated;
-    }
-    if let Ok(mut i) = shared_state.info.lock() {
-        *i = info;
-    }
+    // Update shared state (using blocking_lock since we're not in async context)
+    *shared_state.observation.blocking_lock() = observation;
+    *shared_state.reward.blocking_lock() = reward;
+    *shared_state.done.blocking_lock() = done;
+    *shared_state.truncated.blocking_lock() = truncated;
+    *shared_state.info.blocking_lock() = info;
 }

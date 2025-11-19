@@ -6,8 +6,8 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc;
+use std::sync::Arc;
+use tokio::sync::{mpsc, Mutex};
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::rl::observation::OBSERVATION_SIZE;
@@ -21,6 +21,8 @@ pub struct SharedEnvState {
     pub truncated: Arc<Mutex<bool>>,
     pub info: Arc<Mutex<std::collections::HashMap<String, serde_json::Value>>>,
 }
+
+// Note: These are tokio::sync::Mutex, not std::sync::Mutex
 
 impl Default for SharedEnvState {
     fn default() -> Self {
@@ -38,7 +40,8 @@ impl Default for SharedEnvState {
 #[derive(Debug, Clone)]
 pub enum EnvCommand {
     Reset,
-    Step { action: usize },
+    StepDiscrete { action: usize },
+    StepContinuous { action: [f32; 4] },
     StartTraining,
     EndTraining,
     SetLevel { level: u8 },
@@ -49,6 +52,7 @@ pub enum EnvCommand {
 struct ApiState {
     shared_state: SharedEnvState,
     command_tx: mpsc::UnboundedSender<EnvCommand>,
+    game_config: Arc<Mutex<crate::config::GameConfig>>,
 }
 
 // ============================================================================
@@ -57,7 +61,7 @@ struct ApiState {
 
 #[derive(Deserialize)]
 struct StepRequest {
-    action: usize,
+    action: serde_json::Value,
 }
 
 #[derive(Deserialize)]
@@ -89,9 +93,18 @@ struct ObservationSpaceResponse {
 }
 
 #[derive(Serialize)]
-struct ActionSpaceResponse {
-    r#type: String,
-    n: usize,
+#[serde(untagged)]
+enum ActionSpaceResponse {
+    Discrete {
+        r#type: String,
+        n: usize,
+    },
+    Box {
+        r#type: String,
+        shape: Vec<usize>,
+        low: f32,
+        high: f32,
+    },
 }
 
 #[derive(Serialize)]
@@ -120,14 +133,14 @@ async fn reset_handler(
         .shared_state
         .observation
         .lock()
-        .map_err(|_| AppError::InternalError("Failed to lock observation".to_string()))?
+        .await
         .clone();
 
     let info = state
         .shared_state
         .info
         .lock()
-        .map_err(|_| AppError::InternalError("Failed to lock info".to_string()))?
+        .await
         .clone();
 
     Ok(Json(ResetResponse { observation, info }))
@@ -137,20 +150,64 @@ async fn step_handler(
     State(state): State<ApiState>,
     Json(request): Json<StepRequest>,
 ) -> Result<Json<StepResponse>, AppError> {
-    // Validate action
-    if request.action >= 5 {
-        return Err(AppError::InvalidAction(format!(
-            "Invalid action: {}. Must be in range [0, 5)",
-            request.action
-        )));
-    }
+    // Get current action space type from config
+    let game_config = state.game_config.lock().await;
+    let action_space_type = game_config.action_space_type;
+    drop(game_config); // Release lock
+
+    // Parse and validate action based on action space type
+    let command = match action_space_type {
+        crate::config::ActionSpaceType::Discrete => {
+            // Expect integer action
+            let action = request.action.as_u64()
+                .ok_or_else(|| AppError::InvalidAction("Action must be an integer for discrete action space".to_string()))?
+                as usize;
+
+            if action >= 5 {
+                return Err(AppError::InvalidAction(format!(
+                    "Invalid action: {}. Must be in range [0, 5)",
+                    action
+                )));
+            }
+
+            EnvCommand::StepDiscrete { action }
+        }
+        crate::config::ActionSpaceType::Continuous => {
+            // Expect array of 4 floats
+            let action_array = request.action.as_array()
+                .ok_or_else(|| AppError::InvalidAction("Action must be an array for continuous action space".to_string()))?;
+
+            if action_array.len() != 4 {
+                return Err(AppError::InvalidAction(format!(
+                    "Continuous action must have 4 components, got {}",
+                    action_array.len()
+                )));
+            }
+
+            let mut action = [0.0f32; 4];
+            for (i, val) in action_array.iter().enumerate() {
+                let f = val.as_f64()
+                    .ok_or_else(|| AppError::InvalidAction(format!("Action component {} must be a number", i)))?
+                    as f32;
+
+                if f < -1.0 || f > 1.0 {
+                    return Err(AppError::InvalidAction(format!(
+                        "Action component {} has value {} outside valid range [-1, 1]",
+                        i, f
+                    )));
+                }
+
+                action[i] = f;
+            }
+
+            EnvCommand::StepContinuous { action }
+        }
+    };
 
     // Send step command to game loop
     state
         .command_tx
-        .send(EnvCommand::Step {
-            action: request.action,
-        })
+        .send(command)
         .map_err(|_| AppError::InternalError("Failed to send step command".to_string()))?;
 
     // Wait a bit for game loop to process step (simple synchronization)
@@ -161,32 +218,32 @@ async fn step_handler(
         .shared_state
         .observation
         .lock()
-        .map_err(|_| AppError::InternalError("Failed to lock observation".to_string()))?
+        .await
         .clone();
 
     let reward = *state
         .shared_state
         .reward
         .lock()
-        .map_err(|_| AppError::InternalError("Failed to lock reward".to_string()))?;
+        .await;
 
     let done = *state
         .shared_state
         .done
         .lock()
-        .map_err(|_| AppError::InternalError("Failed to lock done".to_string()))?;
+        .await;
 
     let truncated = *state
         .shared_state
         .truncated
         .lock()
-        .map_err(|_| AppError::InternalError("Failed to lock truncated".to_string()))?;
+        .await;
 
     let info = state
         .shared_state
         .info
         .lock()
-        .map_err(|_| AppError::InternalError("Failed to lock info".to_string()))?
+        .await
         .clone();
 
     Ok(Json(StepResponse {
@@ -207,11 +264,25 @@ async fn observation_space_handler() -> Json<ObservationSpaceResponse> {
     })
 }
 
-async fn action_space_handler() -> Json<ActionSpaceResponse> {
-    Json(ActionSpaceResponse {
-        r#type: "Discrete".to_string(),
-        n: 5,
-    })
+async fn action_space_handler(
+    State(state): State<ApiState>,
+) -> Result<Json<ActionSpaceResponse>, AppError> {
+    let game_config = state.game_config.lock().await;
+
+    let response = match game_config.action_space_type {
+        crate::config::ActionSpaceType::Discrete => ActionSpaceResponse::Discrete {
+            r#type: "Discrete".to_string(),
+            n: 5,
+        },
+        crate::config::ActionSpaceType::Continuous => ActionSpaceResponse::Box {
+            r#type: "Box".to_string(),
+            shape: vec![4],
+            low: -1.0,
+            high: 1.0,
+        },
+    };
+
+    Ok(Json(response))
 }
 
 async fn start_training_handler(
@@ -284,10 +355,12 @@ impl IntoResponse for AppError {
 pub fn create_router(
     shared_state: SharedEnvState,
     command_tx: mpsc::UnboundedSender<EnvCommand>,
+    game_config: Arc<Mutex<crate::config::GameConfig>>,
 ) -> Router {
     let api_state = ApiState {
         shared_state,
         command_tx,
+        game_config,
     };
 
     // Configure CORS to allow requests from Python clients
@@ -313,11 +386,12 @@ pub fn start_api_server(
     port: u16,
     shared_state: SharedEnvState,
     command_tx: mpsc::UnboundedSender<EnvCommand>,
+    game_config: Arc<Mutex<crate::config::GameConfig>>,
 ) {
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            let app = create_router(shared_state, command_tx);
+            let app = create_router(shared_state, command_tx, game_config);
             let addr = format!("127.0.0.1:{}", port);
             let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
 

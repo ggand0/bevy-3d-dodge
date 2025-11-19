@@ -1,5 +1,26 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+/// Resource wrapper for shared game config with API server
+#[derive(Clone, Resource)]
+pub struct SharedGameConfig(pub Arc<Mutex<GameConfig>>);
+
+/// Action space types for RL training
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ActionSpaceType {
+    /// Discrete action space: 5 actions (NOOP, Up, Down, Left, Right)
+    Discrete,
+    /// Continuous action space: Box(4,) for (vx, vy, pitch, roll)
+    Continuous,
+}
+
+impl Default for ActionSpaceType {
+    fn default() -> Self {
+        ActionSpaceType::Discrete
+    }
+}
 
 /// Game difficulty levels
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Resource)]
@@ -49,6 +70,7 @@ pub struct GameConfig {
     pub projectile_spawn_distance: f32,
     pub max_projectiles: usize,
     pub random_spawn_position: bool,  // If true, spawn from random positions on a circle
+    pub action_space_type: ActionSpaceType,  // Discrete or Continuous action space
 }
 
 impl GameConfig {
@@ -72,6 +94,8 @@ impl GameConfig {
             projectile_spawn_distance: 20.0,
             max_projectiles: 10,
             random_spawn_position: false,     // Spawn from fixed +Y side
+            //action_space_type: ActionSpaceType::default(),
+            action_space_type: ActionSpaceType::Continuous,
         }
     }
 
@@ -86,6 +110,7 @@ impl GameConfig {
             projectile_spawn_distance: 20.0,
             max_projectiles: 25,              // 2.5x more projectiles (was 10, now 25)
             random_spawn_position: true,      // Spawn from random positions in a 120° fan
+            action_space_type: ActionSpaceType::Continuous,
         }
     }
 }

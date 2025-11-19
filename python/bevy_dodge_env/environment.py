@@ -53,6 +53,13 @@ class BevyDodgeEnv(gym.Env):
         # Define action space
         if action_space_info["type"] == "Discrete":
             self.action_space = spaces.Discrete(action_space_info["n"])
+        elif action_space_info["type"] == "Box":
+            self.action_space = spaces.Box(
+                low=action_space_info["low"],
+                high=action_space_info["high"],
+                shape=tuple(action_space_info["shape"]),
+                dtype=np.float32,
+            )
         else:
             raise ValueError(f"Unsupported action space type: {action_space_info['type']}")
 
@@ -85,12 +92,12 @@ class BevyDodgeEnv(gym.Env):
 
     def step(
         self,
-        action: int,
+        action,
     ) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         """Execute one step with the given action.
 
         Args:
-            action: Action index (0-4 for discrete action space)
+            action: Action (int for discrete action space, np.ndarray for continuous)
 
         Returns:
             observation: New observation as numpy array
@@ -99,10 +106,18 @@ class BevyDodgeEnv(gym.Env):
             truncated: Whether episode ended due to max steps
             info: Additional information dictionary
         """
+        # Convert action based on action space type
+        if isinstance(self.action_space, spaces.Discrete):
+            action_payload = int(action)
+        elif isinstance(self.action_space, spaces.Box):
+            action_payload = action.tolist() if isinstance(action, np.ndarray) else list(action)
+        else:
+            raise ValueError(f"Unsupported action space type: {type(self.action_space)}")
+
         try:
             response = self._post(
                 f"{self.base_url}/step",
-                {"action": int(action)},
+                {"action": action_payload},
             )
         except requests.exceptions.RequestException as e:
             raise RuntimeError(f"Failed to execute step: {e}") from e
