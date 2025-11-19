@@ -74,19 +74,25 @@ def train(config: DQNConfig, config_name: Optional[str] = None, verbose: int = 1
     print(f"Logs saved to:       {log_path}")
     print()
 
-    # Create environment
+    # First, create a temporary environment to configure the game
     print(f"Connecting to Bevy server at http://127.0.0.1:{config.port}")
+    temp_env = BevyDodgeEnv(port=config.port)
+
+    # Configure game settings (level and action space)
+    level_name = "Level 1 (Baseline)" if config.level == 1 else "Level 2 (Hard)"
+    action_space_type = getattr(config, 'action_space_type', 'discrete')
+    print(f"Configuring game: {level_name}, action space: {action_space_type}...")
+    temp_env.configure(level=config.level, action_space_type=action_space_type)
+    print(f"✓ Game configured: {level_name}, action space: {action_space_type}")
+    del temp_env  # Close temporary environment
+    print()
+
+    # Now create the actual training environment (will query the updated action space)
+    print("Creating training environment with configured action space...")
     env = DummyVecEnv([lambda: make_env(config.port)])
     print(f"✓ Environment created")
     print(f"  Observation space: {env.observation_space}")
     print(f"  Action space: {env.action_space}")
-    print()
-
-    # Set difficulty level
-    level_name = "Level 1 (Baseline)" if config.level == 1 else "Level 2 (Hard)"
-    print(f"Setting difficulty level to {level_name}...")
-    env.envs[0].unwrapped.set_level(config.level)
-    print(f"✓ Level set to {level_name}")
     print()
 
     # Enable training mode to prevent accidental keyboard interruptions

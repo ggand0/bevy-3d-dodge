@@ -49,6 +49,7 @@ class DQNConfig:
     port: int = 8000
     max_episode_steps: int = 1000
     level: int = 1  # Difficulty level (1 for baseline, 2 for hard)
+    action_space_type: str = "discrete"  # Action space type ("discrete" or "continuous")
 
     # Paths
     save_dir: str = "models"

@@ -45,6 +45,7 @@ pub enum EnvCommand {
     StartTraining,
     EndTraining,
     SetLevel { level: u8 },
+    Configure { level: Option<u8>, action_space_type: Option<String> },
 }
 
 /// API server state
@@ -67,6 +68,12 @@ struct StepRequest {
 #[derive(Deserialize)]
 struct SetLevelRequest {
     level: u8,
+}
+
+#[derive(Deserialize)]
+struct ConfigureRequest {
+    level: Option<u8>,
+    action_space_type: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -324,6 +331,39 @@ async fn set_level_handler(
     Ok(StatusCode::OK)
 }
 
+async fn configure_handler(
+    State(state): State<ApiState>,
+    Json(payload): Json<ConfigureRequest>,
+) -> Result<StatusCode, AppError> {
+    // Validate level if provided
+    if let Some(level) = payload.level {
+        if level < 1 || level > 2 {
+            return Err(AppError::InvalidAction(format!("Invalid level: {}. Must be 1 or 2", level)));
+        }
+    }
+
+    // Validate action_space_type if provided
+    if let Some(ref action_space_type) = payload.action_space_type {
+        let action_space_lower = action_space_type.to_lowercase();
+        if action_space_lower != "discrete" && action_space_lower != "continuous" {
+            return Err(AppError::InvalidAction(format!(
+                "Invalid action_space_type: '{}'. Must be 'discrete' or 'continuous'",
+                action_space_type
+            )));
+        }
+    }
+
+    state
+        .command_tx
+        .send(EnvCommand::Configure {
+            level: payload.level,
+            action_space_type: payload.action_space_type,
+        })
+        .map_err(|_| AppError::InternalError("Failed to send configure command".to_string()))?;
+
+    Ok(StatusCode::OK)
+}
+
 // ============================================================================
 // Error Handling
 // ============================================================================
@@ -377,6 +417,7 @@ pub fn create_router(
         .route("/start_training", post(start_training_handler))
         .route("/end_training", post(end_training_handler))
         .route("/set_level", post(set_level_handler))
+        .route("/configure", post(configure_handler))
         .layer(cors)
         .with_state(api_state)
 }

@@ -677,6 +677,74 @@ fn handle_rl_commands(
                 // Increment step counter
                 env_state.episode_steps += 1;
             }
+            EnvCommand::Configure { level: level_num, action_space_type } => {
+                // Update level if provided
+                if let Some(level_num) = level_num {
+                    let new_level = match level_num {
+                        1 => Level::Level1,
+                        2 => Level::Level2,
+                        _ => {
+                            warn!("Invalid level number: {}. Ignoring.", level_num);
+                            continue;
+                        }
+                    };
+
+                    // Update level
+                    *level = new_level;
+                    *config = GameConfig::for_level(new_level);
+
+                    // Update projectile spawn timer with new interval
+                    projectile_timer.timer.set_duration(std::time::Duration::from_secs_f32(config.projectile_spawn_interval));
+                    projectile_timer.timer.reset();
+
+                    info!("Level set to: {}", new_level.name());
+                }
+
+                // Update action space type if provided
+                if let Some(action_space_str) = action_space_type {
+                    let action_space = match action_space_str.to_lowercase().as_str() {
+                        "discrete" => config::ActionSpaceType::Discrete,
+                        "continuous" => config::ActionSpaceType::Continuous,
+                        _ => {
+                            warn!("Invalid action space type: {}. Ignoring.", action_space_str);
+                            continue;
+                        }
+                    };
+
+                    config.action_space_type = action_space;
+                    info!("Action space type set to: {:?}", action_space);
+                }
+
+                // Sync shared config for API server
+                let mut shared = shared_config.0.blocking_lock();
+                *shared = config.clone();
+
+                // Reset game state when configuration changes
+                game_state.is_game_over = false;
+                env_state.episode_steps = 0;
+                env_state.total_reward = 0.0;
+                env_state.last_reward = 0.0;
+
+                // Reset player
+                if let Ok((mut transform, mut velocity, mut tilt, material_handle)) = player_query.get_single_mut() {
+                    transform.translation = Vec3::new(0.0, 0.0, config.player_start_height);
+                    velocity.0 = Vec2::ZERO;
+                    tilt.pitch = 0.0;
+                    tilt.roll = 0.0;
+
+                    // Reset player color to green
+                    if let Some(material) = materials.get_mut(&material_handle.0) {
+                        material.base_color = Color::srgb(0.3, 0.8, 0.4);
+                    }
+                }
+
+                // Despawn all projectiles
+                for entity in projectile_query.iter() {
+                    commands.entity(entity).despawn();
+                }
+
+                info!("Game configuration updated via /configure endpoint");
+            }
         }
     }
 }

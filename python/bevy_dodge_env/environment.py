@@ -177,6 +177,47 @@ class BevyDodgeEnv(gym.Env):
         except requests.exceptions.RequestException as e:
             raise RuntimeError(f"Failed to set level: {e}") from e
 
+    def configure(
+        self,
+        level: Optional[int] = None,
+        action_space_type: Optional[str] = None,
+    ) -> None:
+        """Configure game settings.
+
+        Args:
+            level: Optional level number (1 for baseline, 2 for hard)
+            action_space_type: Optional action space type ("discrete" or "continuous")
+
+        Note:
+            - This is the preferred way to configure the game before training
+            - Calling this will reset the game environment
+            - At least one parameter must be provided
+        """
+        if level is None and action_space_type is None:
+            raise ValueError("At least one configuration parameter must be provided")
+
+        if level is not None and level not in (1, 2):
+            raise ValueError(f"Invalid level: {level}. Must be 1 or 2")
+
+        if action_space_type is not None and action_space_type.lower() not in ("discrete", "continuous"):
+            raise ValueError(f"Invalid action_space_type: {action_space_type}. Must be 'discrete' or 'continuous'")
+
+        config_data = {}
+        if level is not None:
+            config_data["level"] = level
+        if action_space_type is not None:
+            config_data["action_space_type"] = action_space_type
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/configure",
+                json=config_data,
+                timeout=self.timeout
+            )
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            raise RuntimeError(f"Failed to configure game: {e}") from e
+
     def close(self) -> None:
         """Close the environment and disable training mode if enabled."""
         try:

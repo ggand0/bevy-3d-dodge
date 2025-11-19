@@ -94,8 +94,7 @@ impl GameConfig {
             projectile_spawn_distance: 20.0,
             max_projectiles: 10,
             random_spawn_position: false,     // Spawn from fixed +Y side
-            //action_space_type: ActionSpaceType::default(),
-            action_space_type: ActionSpaceType::Continuous,
+            action_space_type: ActionSpaceType::default(),
         }
     }
 
@@ -110,7 +109,7 @@ impl GameConfig {
             projectile_spawn_distance: 20.0,
             max_projectiles: 25,              // 2.5x more projectiles (was 10, now 25)
             random_spawn_position: true,      // Spawn from random positions in a 120° fan
-            action_space_type: ActionSpaceType::Continuous,
+            action_space_type: ActionSpaceType::default(),
         }
     }
 }
