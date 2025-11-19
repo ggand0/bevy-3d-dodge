@@ -116,6 +116,7 @@ fn debug_camera_controls(
     mut camera_query: Query<&mut Transform, With<DebugCamera>>,
     time: Res<Time>,
     free_camera_mode: Res<FreeCameraMode>,
+    mut double_click_timer: Local<Option<f64>>,
 ) {
     if let Ok(mut transform) = camera_query.get_single_mut() {
         let rotate_speed = 1.0;
@@ -123,16 +124,35 @@ fn debug_camera_controls(
         let zoom_sensitivity = 1.0;
         let dt = time.delta_secs();
 
-        // Mouse wheel scroll for zoom (forward/backward movement) - only in free camera mode
-        if free_camera_mode.enabled {
-            for wheel in mouse_wheel.read() {
-                let zoom_amount = wheel.y * zoom_sensitivity;
-                let forward = transform.forward();
-                transform.translation += forward * zoom_amount;
+        // Double-click detection to reset camera
+        const DOUBLE_CLICK_THRESHOLD: f64 = 0.3; // 300ms threshold for double-click
+        if mouse_button.just_pressed(MouseButton::Left) {
+            let current_time = time.elapsed_secs_f64();
+
+            if let Some(last_time) = *double_click_timer {
+                let time_since_last_click = current_time - last_time;
+
+                if time_since_last_click < DOUBLE_CLICK_THRESHOLD {
+                    // Double-click detected! Reset camera to default position
+                    transform.translation = Vec3::new(0.0, -15.0, 10.0);
+                    *transform = transform.looking_at(Vec3::new(0.0, 0.0, 1.0), Vec3::Z);
+                    info!("Camera reset to default position");
+                    *double_click_timer = None; // Clear timer after double-click
+                } else {
+                    // Single click - update timer
+                    *double_click_timer = Some(current_time);
+                }
+            } else {
+                // First click - start timer
+                *double_click_timer = Some(current_time);
             }
-        } else {
-            // Clear the event reader to prevent event buildup
-            mouse_wheel.clear();
+        }
+
+        // Mouse wheel scroll for zoom (forward/backward movement) - works in both modes
+        for wheel in mouse_wheel.read() {
+            let zoom_amount = wheel.y * zoom_sensitivity;
+            let forward = transform.forward();
+            transform.translation += forward * zoom_amount;
         }
 
         // Middle mouse button drag for XY plane panning - only in free camera mode
