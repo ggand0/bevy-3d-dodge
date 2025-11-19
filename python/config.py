@@ -7,8 +7,8 @@ import yaml
 
 
 @dataclass
-class DQNConfig:
-    """Training hyperparameters for DQN and PPO."""
+class TrainingConfig:
+    """Training hyperparameters for RL algorithms (DQN, PPO, etc.)."""
 
     # Algorithm
     algorithm: str = "DQN"  # "DQN" or "PPO"
@@ -56,14 +56,14 @@ class DQNConfig:
     log_dir: str = "logs"
 
     @classmethod
-    def from_yaml(cls, yaml_path: str) -> "DQNConfig":
+    def from_yaml(cls, yaml_path: str) -> "TrainingConfig":
         """Load configuration from YAML file.
 
         Args:
             yaml_path: Path to YAML configuration file
 
         Returns:
-            DQNConfig instance with values from YAML
+            TrainingConfig instance with values from YAML
         """
         path = Path(yaml_path)
         if not path.exists():
@@ -90,7 +90,7 @@ class DQNConfig:
 
 # Quick training config for testing
 @dataclass
-class QuickTestConfig(DQNConfig):
+class QuickTestConfig(TrainingConfig):
     """Quick test configuration with reduced timesteps."""
 
     total_timesteps: int = 10_000
@@ -101,7 +101,7 @@ class QuickTestConfig(DQNConfig):
 
 # Long training config for serious runs
 @dataclass
-class LongTrainingConfig(DQNConfig):
+class LongTrainingConfig(TrainingConfig):
     """Long training configuration."""
 
     total_timesteps: int = 500_000

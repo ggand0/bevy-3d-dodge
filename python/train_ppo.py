@@ -18,7 +18,7 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 
 from bevy_dodge_env import BevyDodgeEnv
-from config import DQNConfig  # Reuse same config class
+from config import TrainingConfig
 
 
 def make_env(port: int) -> gym.Env:
@@ -28,7 +28,7 @@ def make_env(port: int) -> gym.Env:
     return env
 
 
-def train(config: DQNConfig, config_name: Optional[str] = None, verbose: int = 1) -> None:
+def train(config: TrainingConfig, config_name: Optional[str] = None, verbose: int = 1) -> None:
     """Train PPO agent on Bevy dodge game.
 
     Args:
@@ -240,7 +240,7 @@ Examples:
     config_name = None
     if args.config:
         print(f"Loading configuration from: {args.config}")
-        config = DQNConfig.from_yaml(args.config)
+        config = TrainingConfig.from_yaml(args.config)
         config_name = args.config
     else:
         print("Error: --config is required")

@@ -1,5 +1,5 @@
 # Default DQN training configuration
-# Based on DQNConfig defaults
+# Based on TrainingConfig defaults
 
 # Training hyperparameters
 total_timesteps: 100000
