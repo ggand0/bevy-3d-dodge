@@ -312,6 +312,23 @@ fn setup_scene(
         LevelText,
     ));
 
+    // Config info (below level indicator)
+    commands.spawn((
+        Text::new("Action Space: Discrete"),
+        TextFont {
+            font_size: 16.0,
+            ..default()
+        },
+        TextColor(Color::srgb(0.7, 0.7, 0.7)), // Gray color
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(70.0),
+            right: Val::Px(10.0),
+            ..default()
+        },
+        ConfigInfoText,
+    ));
+
     // Training mode indicator (shown when training mode is enabled)
     commands.spawn((
         Text::new("TRAINING MODE - Agent Control Active"),
@@ -381,6 +398,9 @@ struct TrainingModeText;
 struct LevelText;
 
 #[derive(Component)]
+struct ConfigInfoText;
+
+#[derive(Component)]
 struct CameraDebugText;
 
 #[derive(Component)]
@@ -392,10 +412,12 @@ fn update_ui(
     free_camera_mode: Res<game::camera::FreeCameraMode>,
     training_mode: Res<TrainingMode>,
     level: Res<Level>,
-    mut game_over_query: Query<&mut Node, (With<GameOverText>, Without<CameraDebugText>, Without<TrainingModeText>, Without<LevelText>)>,
-    mut training_text_query: Query<&mut Node, (With<TrainingModeText>, Without<CameraDebugText>, Without<GameOverText>, Without<LevelText>)>,
-    mut level_text_query: Query<&mut Text, With<LevelText>>,
-    mut debug_text_query: Query<&mut Node, (With<CameraDebugText>, Without<GameOverText>, Without<TrainingModeText>, Without<LevelText>)>,
+    config: Res<config::GameConfig>,
+    mut game_over_query: Query<&mut Node, (With<GameOverText>, Without<CameraDebugText>, Without<TrainingModeText>, Without<LevelText>, Without<ConfigInfoText>)>,
+    mut training_text_query: Query<&mut Node, (With<TrainingModeText>, Without<CameraDebugText>, Without<GameOverText>, Without<LevelText>, Without<ConfigInfoText>)>,
+    mut level_text_query: Query<&mut Text, (With<LevelText>, Without<ConfigInfoText>)>,
+    mut config_info_query: Query<&mut Text, (With<ConfigInfoText>, Without<LevelText>)>,
+    mut debug_text_query: Query<&mut Node, (With<CameraDebugText>, Without<GameOverText>, Without<TrainingModeText>, Without<LevelText>, Without<ConfigInfoText>)>,
     mut axis_query: Query<&mut Visibility, With<CoordinateAxis>>,
 ) {
     if let Ok(mut node) = game_over_query.get_single_mut() {
@@ -418,6 +440,15 @@ fn update_ui(
     // Update level indicator text
     if let Ok(mut text) = level_text_query.get_single_mut() {
         **text = level.name().to_string();
+    }
+
+    // Update config info text
+    if let Ok(mut text) = config_info_query.get_single_mut() {
+        let action_space_str = match config.action_space_type {
+            config::ActionSpaceType::Discrete => "Discrete",
+            config::ActionSpaceType::Continuous => "Continuous",
+        };
+        **text = format!("Action Space: {}", action_space_str);
     }
 
     // Camera help text is only visible in free camera mode
