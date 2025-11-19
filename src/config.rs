@@ -71,6 +71,7 @@ pub struct GameConfig {
     pub max_projectiles: usize,
     pub random_spawn_position: bool,  // If true, spawn from random positions on a circle
     pub action_space_type: ActionSpaceType,  // Discrete or Continuous action space
+    pub sprint_multiplier: f32,  // Speed multiplier when sprinting (e.g., 0.5 = 1.5x speed)
 }
 
 impl GameConfig {
@@ -95,6 +96,7 @@ impl GameConfig {
             max_projectiles: 10,
             random_spawn_position: false,     // Spawn from fixed +Y side
             action_space_type: ActionSpaceType::default(),
+            sprint_multiplier: 0.5,  // Sprint gives 1.5x speed (5.0 -> 7.5)
         }
     }
 
@@ -110,6 +112,7 @@ impl GameConfig {
             max_projectiles: 25,              // 2.5x more projectiles (was 10, now 25)
             random_spawn_position: true,      // Spawn from random positions in a 120° fan
             action_space_type: ActionSpaceType::default(),
+            sprint_multiplier: 0.5,  // Sprint gives 1.5x speed (5.0 -> 7.5)
         }
     }
 }

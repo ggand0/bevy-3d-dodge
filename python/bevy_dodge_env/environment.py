@@ -190,8 +190,16 @@ class BevyDodgeEnv(gym.Env):
 
         Note:
             - This is the preferred way to configure the game before training
-            - Calling this will reset the game environment
+            - Calling this will reset the game environment internally
+            - After calling configure(), you must call reset() or create a new environment
+              instance to ensure the updated action space is queried correctly
             - At least one parameter must be provided
+
+        Example:
+            >>> env = BevyDodgeEnv()
+            >>> env.configure(action_space_type="continuous")
+            >>> env.reset()  # Ensures config is synced
+            >>> # Or: del env; env = BevyDodgeEnv()  # New env queries updated action space
         """
         if level is None and action_space_type is None:
             raise ValueError("At least one configuration parameter must be provided")

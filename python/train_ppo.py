@@ -84,6 +84,10 @@ def train(config: TrainingConfig, config_name: Optional[str] = None, verbose: in
     print(f"Configuring game: {level_name}, action space: {action_space_type}...")
     temp_env.configure(level=config.level, action_space_type=action_space_type)
     print(f"✓ Game configured: {level_name}, action space: {action_space_type}")
+
+    # Reset to ensure config is fully applied and synced to API server's shared state
+    # This ensures the next environment creation will query the correct action space
+    temp_env.reset()
     del temp_env  # Close temporary environment
     print()
 

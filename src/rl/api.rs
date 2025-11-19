@@ -41,7 +41,7 @@ impl Default for SharedEnvState {
 pub enum EnvCommand {
     Reset,
     StepDiscrete { action: usize },
-    StepContinuous { action: [f32; 4] },
+    StepContinuous { action: [f32; 5] },
     StartTraining,
     EndTraining,
     SetLevel { level: u8 },
@@ -180,18 +180,18 @@ async fn step_handler(
             EnvCommand::StepDiscrete { action }
         }
         crate::config::ActionSpaceType::Continuous => {
-            // Expect array of 4 floats
+            // Expect array of 5 floats: [vx, vy, pitch, roll, sprint]
             let action_array = request.action.as_array()
                 .ok_or_else(|| AppError::InvalidAction("Action must be an array for continuous action space".to_string()))?;
 
-            if action_array.len() != 4 {
+            if action_array.len() != 5 {
                 return Err(AppError::InvalidAction(format!(
-                    "Continuous action must have 4 components, got {}",
+                    "Continuous action must have 5 components [vx, vy, pitch, roll, sprint], got {}",
                     action_array.len()
                 )));
             }
 
-            let mut action = [0.0f32; 4];
+            let mut action = [0.0f32; 5];
             for (i, val) in action_array.iter().enumerate() {
                 let f = val.as_f64()
                     .ok_or_else(|| AppError::InvalidAction(format!("Action component {} must be a number", i)))?
@@ -283,7 +283,7 @@ async fn action_space_handler(
         },
         crate::config::ActionSpaceType::Continuous => ActionSpaceResponse::Box {
             r#type: "Box".to_string(),
-            shape: vec![4],
+            shape: vec![5],  // [vx, vy, pitch, roll, sprint]
             low: -1.0,
             high: 1.0,
         },

@@ -40,17 +40,18 @@ impl RLAction {
 }
 
 /// Continuous action space for RL agent
-/// 4D Box: [vx, vy, pitch, roll] all in range [-1, 1]
+/// 5D Box: [vx, vy, pitch, roll, sprint] all in range [-1, 1]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ContinuousAction {
     pub velocity: Vec2,  // (vx, vy) in range [-1, 1]
     pub pitch: f32,      // Forward/backward tilt in range [-1, 1]
     pub roll: f32,       // Left/right tilt in range [-1, 1]
+    pub sprint: f32,     // Sprint intensity in range [0, 1] (normalized from [-1, 1])
 }
 
 impl ContinuousAction {
-    /// Create from array of 4 floats: [vx, vy, pitch, roll]
-    pub fn from_array(arr: [f32; 4]) -> Result<Self, String> {
+    /// Create from array of 5 floats: [vx, vy, pitch, roll, sprint]
+    pub fn from_array(arr: [f32; 5]) -> Result<Self, String> {
         // Validate ranges
         for (i, &val) in arr.iter().enumerate() {
             if val < -1.0 || val > 1.0 {
@@ -61,16 +62,23 @@ impl ContinuousAction {
             }
         }
 
+        // Normalize sprint from [-1, 1] to [0, 1] for clearer semantics
+        // -1 and 0 both mean no sprint, +1 means full sprint
+        let sprint_normalized = (arr[4] + 1.0) / 2.0;
+
         Ok(Self {
             velocity: Vec2::new(arr[0], arr[1]),
             pitch: arr[2],
             roll: arr[3],
+            sprint: sprint_normalized.clamp(0.0, 1.0),
         })
     }
 
     /// Convert to array format
-    pub fn to_array(&self) -> [f32; 4] {
-        [self.velocity.x, self.velocity.y, self.pitch, self.roll]
+    pub fn to_array(&self) -> [f32; 5] {
+        // Convert sprint back from [0, 1] to [-1, 1]
+        let sprint_denormalized = self.sprint * 2.0 - 1.0;
+        [self.velocity.x, self.velocity.y, self.pitch, self.roll, sprint_denormalized]
     }
 }
 
@@ -98,8 +106,13 @@ pub fn apply_continuous_action(
     tilt: &mut PlayerTilt,
     config: &GameConfig,
 ) {
-    // Apply velocity (normalized action * player_speed)
-    velocity.0 = action.velocity * config.player_speed;
+    // Calculate effective speed with sprint multiplier
+    // sprint is in [0, 1], so: speed = base_speed * (1 + sprint * multiplier)
+    let speed_multiplier = 1.0 + action.sprint * config.sprint_multiplier;
+    let effective_speed = config.player_speed * speed_multiplier;
+
+    // Apply velocity (normalized action * effective_speed)
+    velocity.0 = action.velocity * effective_speed;
 
     // Apply tilt with constraints (max ±30° = ±0.523 radians)
     const MAX_TILT: f32 = 0.523; // 30 degrees in radians
@@ -132,31 +145,37 @@ mod tests {
 
     #[test]
     fn test_continuous_action_from_array() {
-        let action = ContinuousAction::from_array([0.5, -0.3, 0.1, -0.7]).unwrap();
+        let action = ContinuousAction::from_array([0.5, -0.3, 0.1, -0.7, 0.5]).unwrap();
         assert_eq!(action.velocity, Vec2::new(0.5, -0.3));
         assert_eq!(action.pitch, 0.1);
         assert_eq!(action.roll, -0.7);
+        // sprint 0.5 normalized from [-1, 1] to [0, 1] = (0.5 + 1.0) / 2.0 = 0.75
+        assert!((action.sprint - 0.75).abs() < 0.001);
     }
 
     #[test]
     fn test_continuous_action_validation() {
         // Valid actions
-        assert!(ContinuousAction::from_array([1.0, 1.0, 1.0, 1.0]).is_ok());
-        assert!(ContinuousAction::from_array([-1.0, -1.0, -1.0, -1.0]).is_ok());
-        assert!(ContinuousAction::from_array([0.0, 0.0, 0.0, 0.0]).is_ok());
+        assert!(ContinuousAction::from_array([1.0, 1.0, 1.0, 1.0, 1.0]).is_ok());
+        assert!(ContinuousAction::from_array([-1.0, -1.0, -1.0, -1.0, -1.0]).is_ok());
+        assert!(ContinuousAction::from_array([0.0, 0.0, 0.0, 0.0, 0.0]).is_ok());
 
         // Invalid actions (out of range)
-        assert!(ContinuousAction::from_array([1.1, 0.0, 0.0, 0.0]).is_err());
-        assert!(ContinuousAction::from_array([0.0, -1.1, 0.0, 0.0]).is_err());
-        assert!(ContinuousAction::from_array([0.0, 0.0, 2.0, 0.0]).is_err());
-        assert!(ContinuousAction::from_array([0.0, 0.0, 0.0, -1.5]).is_err());
+        assert!(ContinuousAction::from_array([1.1, 0.0, 0.0, 0.0, 0.0]).is_err());
+        assert!(ContinuousAction::from_array([0.0, -1.1, 0.0, 0.0, 0.0]).is_err());
+        assert!(ContinuousAction::from_array([0.0, 0.0, 2.0, 0.0, 0.0]).is_err());
+        assert!(ContinuousAction::from_array([0.0, 0.0, 0.0, -1.5, 0.0]).is_err());
+        assert!(ContinuousAction::from_array([0.0, 0.0, 0.0, 0.0, 1.5]).is_err());
     }
 
     #[test]
     fn test_continuous_action_round_trip() {
-        let original = [0.5, -0.3, 0.1, -0.7];
+        let original = [0.5, -0.3, 0.1, -0.7, 0.8];
         let action = ContinuousAction::from_array(original).unwrap();
         let converted = action.to_array();
-        assert_eq!(original, converted);
+        // Check each component within floating point tolerance
+        for i in 0..5 {
+            assert!((original[i] - converted[i]).abs() < 0.001);
+        }
     }
 }
