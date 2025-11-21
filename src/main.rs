@@ -3,10 +3,12 @@ mod game;
 mod rl;
 
 use bevy::prelude::*;
-use config::GameConfig;
+use config::{GameConfig, Level, SharedGameConfig};
 use tokio::sync::mpsc;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use rl::api::{EnvCommand, SharedEnvState, start_api_server};
-use rl::environment::RLEnvironmentState;
+use rl::environment::{RLEnvironmentState, ControlMode, TrainingMode};
 
 fn main() {
     // Create channel for RL API commands
@@ -15,8 +17,12 @@ fn main() {
     // Create shared state for RL API
     let shared_state = SharedEnvState::default();
 
+    // Create shared game config for API server
+    let game_config = Arc::new(Mutex::new(GameConfig::default()));
+    let shared_config = SharedGameConfig(game_config.clone());
+
     // Start HTTP API server on port 8000
-    start_api_server(8000, shared_state.clone(), command_tx);
+    start_api_server(8000, shared_state.clone(), command_tx, game_config);
 
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -27,13 +33,24 @@ fn main() {
             }),
             ..default()
         }))
+        .insert_resource(Level::default())
         .insert_resource(GameConfig::default())
         .insert_resource(RLEnvironmentState::default())
+        .insert_resource(ControlMode::default())
+        .insert_resource(TrainingMode::default())
         .insert_non_send_resource(command_rx)
         .insert_resource(shared_state)
+        .insert_resource(shared_config)
         .add_plugins(game::GamePlugin)
         .add_systems(Startup, setup_scene)
-        .add_systems(Update, (handle_reset, update_ui, handle_rl_commands, update_rl_state))
+        .add_systems(Update, (
+            handle_reset,
+            handle_level_change,
+            update_ui,
+            update_action_debug,
+            handle_rl_commands,
+            update_rl_state
+        ))
         .run();
 }
 
@@ -263,9 +280,9 @@ fn setup_scene(
         CoordinateAxis,
     ));
 
-    // UI Text
+    // UI Text - Controls
     commands.spawn((
-        Text::new("WASD: Move | Space: Jump | R: Reset | F1: Toggle Axes | ESC: Quit"),
+        Text::new("WASD: Move | Space: Jump | R: Reset | L: Change Level | F1: Free Cam | F2: Toggle Axes | ESC: Quit"),
         TextFont {
             font_size: 20.0,
             ..default()
@@ -279,9 +296,79 @@ fn setup_scene(
         },
     ));
 
-    // Camera debug help text (now shown by default)
+    // Level indicator (top right, below control legend)
     commands.spawn((
-        Text::new("Camera: LMB+Drag: Rotate | MMB+Drag: Pan | Scroll: Zoom | UO: Up/Down"),
+        Text::new("Level 1 (Baseline)"),
+        TextFont {
+            font_size: 22.0,
+            ..default()
+        },
+        TextColor(Color::srgb(0.3, 1.0, 0.3)), // Green color
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(40.0),
+            right: Val::Px(10.0),
+            ..default()
+        },
+        LevelText,
+    ));
+
+    // Config info (below level indicator)
+    commands.spawn((
+        Text::new("Action Space: Discrete"),
+        TextFont {
+            font_size: 16.0,
+            ..default()
+        },
+        TextColor(Color::srgb(0.7, 0.7, 0.7)), // Gray color
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(70.0),
+            right: Val::Px(10.0),
+            ..default()
+        },
+        ConfigInfoText,
+    ));
+
+    // Training mode indicator (shown when training mode is enabled)
+    commands.spawn((
+        Text::new("TRAINING MODE - Agent Control Active"),
+        TextFont {
+            font_size: 18.0,
+            ..default()
+        },
+        TextColor(Color::srgb(1.0, 0.3, 0.3)), // Red color
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(35.0),
+            left: Val::Px(10.0),
+            display: Display::None,
+            ..default()
+        },
+        TrainingModeText,
+    ));
+
+    // Action debug text (shown during training mode, left side below training indicator)
+    commands.spawn((
+        Text::new("vx: 0.00 | vy: 0.00 | sprint: 0.00 | speed: 5.00"),
+        TextFont {
+            font_size: 16.0,
+            ..default()
+        },
+        TextColor(Color::srgb(0.8, 0.8, 1.0)), // Light blue
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(60.0),
+            left: Val::Px(10.0),
+            display: Display::None,
+            ..default()
+        },
+        ActionDebugText,
+    ));
+
+    // Camera help text for free camera mode
+    commands.spawn((
+        Text::new("Free Cam: LMB+Drag: Look | MMB+Drag: Pan | Scroll: Zoom | UO: Up/Down"),
         TextFont {
             font_size: 16.0,
             ..default()
@@ -289,7 +376,7 @@ fn setup_scene(
         TextColor(Color::srgb(1.0, 1.0, 0.0)),
         Node {
             position_type: PositionType::Absolute,
-            top: Val::Px(35.0),
+            top: Val::Px(60.0),
             left: Val::Px(10.0),
             ..default()
         },
@@ -297,18 +384,23 @@ fn setup_scene(
     ));
 
     // Game over text (initially hidden)
+    // Centered horizontally using left: 50% and transform translateX(-50%)
     commands.spawn((
-        Text::new("GAME OVER! Press R to restart"),
+        Text::new("GAME OVER!"),
         TextFont {
             font_size: 40.0,
             ..default()
         },
-        TextColor(Color::srgb(1.0, 0.2, 0.2)),
+        TextColor(Color::srgb(1.0, 0.5, 0.0)), // Orange color
         Node {
             position_type: PositionType::Absolute,
             top: Val::Px(300.0),
-            left: Val::Px(400.0),
+            left: Val::Percent(50.0),
             display: Display::None,
+            margin: UiRect {
+                left: Val::Px(-100.0), // Approximate half-width for centering (adjust based on text width)
+                ..default()
+            },
             ..default()
         },
         GameOverText,
@@ -319,16 +411,36 @@ fn setup_scene(
 struct GameOverText;
 
 #[derive(Component)]
+struct TrainingModeText;
+
+#[derive(Component)]
+struct LevelText;
+
+#[derive(Component)]
+struct ConfigInfoText;
+
+#[derive(Component)]
 struct CameraDebugText;
 
 #[derive(Component)]
 struct CoordinateAxis;
 
+#[derive(Component)]
+struct ActionDebugText;
+
 fn update_ui(
     game_state: Res<game::collision::GameState>,
     debug_mode: Res<game::camera::CameraDebugMode>,
-    mut game_over_query: Query<&mut Node, (With<GameOverText>, Without<CameraDebugText>)>,
-    mut debug_text_query: Query<&mut Node, (With<CameraDebugText>, Without<GameOverText>)>,
+    free_camera_mode: Res<game::camera::FreeCameraMode>,
+    training_mode: Res<TrainingMode>,
+    level: Res<Level>,
+    config: Res<config::GameConfig>,
+    mut game_over_query: Query<&mut Node, (With<GameOverText>, Without<CameraDebugText>, Without<TrainingModeText>, Without<LevelText>, Without<ConfigInfoText>, Without<ActionDebugText>)>,
+    mut training_text_query: Query<&mut Node, (With<TrainingModeText>, Without<CameraDebugText>, Without<GameOverText>, Without<LevelText>, Without<ConfigInfoText>, Without<ActionDebugText>)>,
+    mut level_text_query: Query<&mut Text, (With<LevelText>, Without<ConfigInfoText>)>,
+    mut config_info_query: Query<&mut Text, (With<ConfigInfoText>, Without<LevelText>)>,
+    mut debug_text_query: Query<&mut Node, (With<CameraDebugText>, Without<GameOverText>, Without<TrainingModeText>, Without<LevelText>, Without<ConfigInfoText>, Without<ActionDebugText>)>,
+    mut action_debug_query: Query<&mut Node, With<ActionDebugText>>,
     mut axis_query: Query<&mut Visibility, With<CoordinateAxis>>,
 ) {
     if let Ok(mut node) = game_over_query.get_single_mut() {
@@ -339,9 +451,45 @@ fn update_ui(
         };
     }
 
-    // Camera help text is always visible now since camera controls are enabled by default
+    // Training mode indicator is visible when training mode is enabled
+    if let Ok(mut node) = training_text_query.get_single_mut() {
+        node.display = if training_mode.enabled {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+
+    // Action debug text is visible when training mode is enabled
+    if let Ok(mut node) = action_debug_query.get_single_mut() {
+        node.display = if training_mode.enabled {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+
+    // Update level indicator text
+    if let Ok(mut text) = level_text_query.get_single_mut() {
+        **text = level.name().to_string();
+    }
+
+    // Update config info text
+    if let Ok(mut text) = config_info_query.get_single_mut() {
+        let action_space_str = match config.action_space_type {
+            config::ActionSpaceType::Discrete => "Discrete",
+            config::ActionSpaceType::Continuous(cont_config) => cont_config.name(),
+        };
+        **text = format!("Action Space: {}", action_space_str);
+    }
+
+    // Camera help text is only visible in free camera mode
     if let Ok(mut node) = debug_text_query.get_single_mut() {
-        node.display = Display::Flex;
+        node.display = if free_camera_mode.enabled {
+            Display::Flex
+        } else {
+            Display::None
+        };
     }
 
     // Toggle coordinate axes visibility based on debug mode
@@ -354,8 +502,37 @@ fn update_ui(
     }
 }
 
+fn update_action_debug(
+    player_query: Query<&game::player::Velocity, With<game::player::Player>>,
+    config: Res<GameConfig>,
+    mut debug_text_query: Query<&mut Text, With<ActionDebugText>>,
+) {
+    if let Ok(velocity) = player_query.get_single() {
+        if let Ok(mut text) = debug_text_query.get_single_mut() {
+            let vx = velocity.0.x;
+            let vy = velocity.0.y;
+            let speed = velocity.0.length();
+
+            // Calculate sprint value from speed
+            // speed = base_speed * (1.0 + sprint * multiplier)
+            // sprint = (speed / base_speed - 1.0) / multiplier
+            let sprint = if config.sprint_multiplier > 0.0 {
+                ((speed / config.player_speed - 1.0) / config.sprint_multiplier).max(0.0).min(1.0)
+            } else {
+                0.0
+            };
+
+            **text = format!(
+                "vx: {:.2} | vy: {:.2} | sprint: {:.2} | speed: {:.2}",
+                vx, vy, sprint, speed
+            );
+        }
+    }
+}
+
 fn handle_reset(
     keyboard_input: Res<ButtonInput<KeyCode>>,
+    training_mode: Res<TrainingMode>,
     mut game_state: ResMut<game::collision::GameState>,
     mut player_query: Query<
         (
@@ -372,7 +549,8 @@ fn handle_reset(
     config: Res<GameConfig>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    if keyboard_input.just_pressed(KeyCode::KeyR) {
+    // Disable R key reset during training mode to prevent accidental interruptions
+    if keyboard_input.just_pressed(KeyCode::KeyR) && !training_mode.enabled {
         // Reset game state
         game_state.is_game_over = false;
 
@@ -403,21 +581,123 @@ fn handle_reset(
     }
 }
 
-/// Handle RL API commands (reset, step)
-fn handle_rl_commands(
-    mut command_rx: NonSendMut<mpsc::UnboundedReceiver<EnvCommand>>,
-    mut player_query: Query<(&mut Transform, &mut game::player::Velocity), With<game::player::Player>>,
+/// Handle level changes with L key (only when not in training mode)
+fn handle_level_change(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    training_mode: Res<TrainingMode>,
+    mut level: ResMut<Level>,
+    mut config: ResMut<GameConfig>,
+    mut projectile_timer: ResMut<game::projectile::ProjectileSpawnTimer>,
     mut game_state: ResMut<game::collision::GameState>,
-    mut env_state: ResMut<RLEnvironmentState>,
+    mut player_query: Query<
+        (
+            &mut Transform,
+            &mut game::player::Velocity,
+            &mut game::player::VerticalVelocity,
+            &mut game::player::OnGround,
+            &MeshMaterial3d<StandardMaterial>,
+        ),
+        With<game::player::Player>,
+    >,
     projectile_query: Query<Entity, With<game::projectile::Projectile>>,
     mut commands: Commands,
-    config: Res<GameConfig>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    // Only allow level changes when not in training mode
+    if keyboard_input.just_pressed(KeyCode::KeyL) && !training_mode.enabled {
+        // Change to next level
+        *level = level.next();
+
+        // Update game config for new level
+        *config = GameConfig::for_level(*level);
+
+        // Update projectile spawn timer with new interval
+        projectile_timer.timer.set_duration(std::time::Duration::from_secs_f32(config.projectile_spawn_interval));
+        projectile_timer.timer.reset();
+
+        // Reset game state
+        game_state.is_game_over = false;
+
+        // Reset player
+        if let Ok((mut transform, mut velocity, mut v_vel, mut on_ground, material_handle)) = player_query.get_single_mut() {
+            transform.translation = Vec3::new(0.0, 0.0, config.player_start_height);
+            velocity.0 = Vec2::ZERO;
+            v_vel.0 = 0.0;
+            on_ground.0 = true;
+
+            // Reset player color
+            if let Some(material) = materials.get_mut(&material_handle.0) {
+                material.base_color = Color::srgb(0.3, 0.8, 0.4);
+            }
+        }
+
+        // Despawn all projectiles
+        for entity in projectile_query.iter() {
+            commands.entity(entity).despawn();
+        }
+
+        info!("Level changed to: {}", level.name());
+    }
+}
+
+/// Handle RL API commands (reset, step, start/end training, set level)
+fn handle_rl_commands(
+    mut command_rx: NonSendMut<mpsc::UnboundedReceiver<EnvCommand>>,
+    mut player_query: Query<(
+        &mut Transform,
+        &mut game::player::Velocity,
+        &mut game::player::PlayerTilt,
+        &mut game::player::VerticalVelocity,
+        &game::player::OnGround,
+        &MeshMaterial3d<StandardMaterial>
+    ), With<game::player::Player>>,
+    mut game_state: ResMut<game::collision::GameState>,
+    mut env_state: ResMut<RLEnvironmentState>,
+    mut control_mode: ResMut<ControlMode>,
+    mut training_mode: ResMut<TrainingMode>,
+    mut level: ResMut<Level>,
+    mut config: ResMut<GameConfig>,
+    shared_config: Res<config::SharedGameConfig>,
+    mut projectile_timer: ResMut<game::projectile::ProjectileSpawnTimer>,
+    projectile_query: Query<Entity, With<game::projectile::Projectile>>,
+    mut commands: Commands,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // Process all pending commands
     while let Ok(command) = command_rx.try_recv() {
         match command {
-            EnvCommand::Reset => {
+            EnvCommand::StartTraining => {
+                training_mode.enabled = true;
+                info!("Training mode ENABLED - keyboard reset (R) disabled");
+            }
+            EnvCommand::EndTraining => {
+                training_mode.enabled = false;
+                *control_mode = ControlMode::Human;
+                info!("Training mode DISABLED - returning to human control");
+            }
+            EnvCommand::SetLevel { level: level_num } => {
+                // Convert level number to Level enum
+                let new_level = match level_num {
+                    1 => Level::Level1,
+                    2 => Level::Level2,
+                    _ => {
+                        warn!("Invalid level number: {}. Ignoring.", level_num);
+                        continue;
+                    }
+                };
+
+                // Update level and config
+                *level = new_level;
+                *config = GameConfig::for_level(new_level);
+
+                // Sync shared config for API server
+                let mut shared = shared_config.0.blocking_lock();
+                *shared = config.clone();
+
+                // Update projectile spawn timer with new interval
+                projectile_timer.timer.set_duration(std::time::Duration::from_secs_f32(config.projectile_spawn_interval));
+                projectile_timer.timer.reset();
+
                 // Reset game state
                 game_state.is_game_over = false;
                 env_state.episode_steps = 0;
@@ -425,9 +705,47 @@ fn handle_rl_commands(
                 env_state.last_reward = 0.0;
 
                 // Reset player
-                if let Ok((mut transform, mut velocity)) = player_query.get_single_mut() {
+                if let Ok((mut transform, mut velocity, mut tilt, mut v_vel, _on_ground, material_handle)) = player_query.get_single_mut() {
                     transform.translation = Vec3::new(0.0, 0.0, config.player_start_height);
                     velocity.0 = Vec2::ZERO;
+                    tilt.pitch = 0.0;
+                    tilt.roll = 0.0;
+                    v_vel.0 = 0.0;
+
+                    // Reset player color to green
+                    if let Some(material) = materials.get_mut(&material_handle.0) {
+                        material.base_color = Color::srgb(0.3, 0.8, 0.4);
+                    }
+                }
+
+                // Despawn all projectiles
+                for entity in projectile_query.iter() {
+                    commands.entity(entity).despawn();
+                }
+
+                info!("Level set to: {}", new_level.name());
+            }
+            EnvCommand::Reset => {
+                // Switch to RL agent control
+                *control_mode = ControlMode::RLAgent;
+                // Reset game state
+                game_state.is_game_over = false;
+                env_state.episode_steps = 0;
+                env_state.total_reward = 0.0;
+                env_state.last_reward = 0.0;
+
+                // Reset player
+                if let Ok((mut transform, mut velocity, mut tilt, mut v_vel, _on_ground, material_handle)) = player_query.get_single_mut() {
+                    transform.translation = Vec3::new(0.0, 0.0, config.player_start_height);
+                    velocity.0 = Vec2::ZERO;
+                    tilt.pitch = 0.0;
+                    tilt.roll = 0.0;
+                    v_vel.0 = 0.0;
+
+                    // Reset player color to green
+                    if let Some(material) = materials.get_mut(&material_handle.0) {
+                        material.base_color = Color::srgb(0.3, 0.8, 0.4);
+                    }
                 }
 
                 // Despawn all projectiles
@@ -437,16 +755,97 @@ fn handle_rl_commands(
 
                 info!("RL Environment reset");
             }
-            EnvCommand::Step { action } => {
-                // Parse and apply action
+            EnvCommand::StepDiscrete { action } => {
+                // Parse and apply discrete action
                 if let Ok(rl_action) = rl::action::RLAction::from_index(action) {
-                    if let Ok((_, mut velocity)) = player_query.get_single_mut() {
+                    if let Ok((_, mut velocity, _, _, _, _)) = player_query.get_single_mut() {
                         rl::action::apply_action(rl_action, &mut velocity, &config);
                     }
                 }
 
                 // Increment step counter
                 env_state.episode_steps += 1;
+            }
+            EnvCommand::StepContinuous { action, config: cont_config } => {
+                // Parse and apply continuous action
+                if let Ok(continuous_action) = rl::action::ContinuousAction::from_array(&action, cont_config) {
+                    if let Ok((_, mut velocity, mut tilt, mut v_vel, on_ground, _)) = player_query.get_single_mut() {
+                        rl::action::apply_continuous_action(continuous_action, &mut velocity, &mut tilt, &mut v_vel, &on_ground, &config);
+                    }
+                }
+
+                // Increment step counter
+                env_state.episode_steps += 1;
+            }
+            EnvCommand::Configure { level: level_num, action_space_type } => {
+                // Update level if provided
+                if let Some(level_num) = level_num {
+                    let new_level = match level_num {
+                        1 => Level::Level1,
+                        2 => Level::Level2,
+                        _ => {
+                            warn!("Invalid level number: {}. Ignoring.", level_num);
+                            continue;
+                        }
+                    };
+
+                    // Update level
+                    *level = new_level;
+                    *config = GameConfig::for_level(new_level);
+
+                    // Update projectile spawn timer with new interval
+                    projectile_timer.timer.set_duration(std::time::Duration::from_secs_f32(config.projectile_spawn_interval));
+                    projectile_timer.timer.reset();
+
+                    info!("Level set to: {}", new_level.name());
+                }
+
+                // Update action space type if provided
+                if let Some(action_space_str) = action_space_type {
+                    let action_space_lower = action_space_str.to_lowercase();
+                    let action_space = if action_space_lower == "discrete" {
+                        config::ActionSpaceType::Discrete
+                    } else if let Some(cont_config) = config::ContinuousActionConfig::from_str(&action_space_lower) {
+                        config::ActionSpaceType::Continuous(cont_config)
+                    } else {
+                        warn!("Invalid action space type: {}. Ignoring.", action_space_str);
+                        continue;
+                    };
+
+                    config.action_space_type = action_space;
+                    info!("Action space type set to: {:?}", action_space);
+                }
+
+                // Sync shared config for API server
+                let mut shared = shared_config.0.blocking_lock();
+                *shared = config.clone();
+
+                // Reset game state when configuration changes
+                game_state.is_game_over = false;
+                env_state.episode_steps = 0;
+                env_state.total_reward = 0.0;
+                env_state.last_reward = 0.0;
+
+                // Reset player
+                if let Ok((mut transform, mut velocity, mut tilt, mut v_vel, _on_ground, material_handle)) = player_query.get_single_mut() {
+                    transform.translation = Vec3::new(0.0, 0.0, config.player_start_height);
+                    velocity.0 = Vec2::ZERO;
+                    tilt.pitch = 0.0;
+                    tilt.roll = 0.0;
+                    v_vel.0 = 0.0;
+
+                    // Reset player color to green
+                    if let Some(material) = materials.get_mut(&material_handle.0) {
+                        material.base_color = Color::srgb(0.3, 0.8, 0.4);
+                    }
+                }
+
+                // Despawn all projectiles
+                for entity in projectile_query.iter() {
+                    commands.entity(entity).despawn();
+                }
+
+                info!("Game configuration updated via /configure endpoint");
             }
         }
     }
@@ -478,20 +877,10 @@ fn update_rl_state(
     // Create step info
     let info = rl::environment::create_step_info(&env_state, projectile_query.iter().count());
 
-    // Update shared state
-    if let Ok(mut obs) = shared_state.observation.lock() {
-        *obs = observation;
-    }
-    if let Ok(mut r) = shared_state.reward.lock() {
-        *r = reward;
-    }
-    if let Ok(mut d) = shared_state.done.lock() {
-        *d = done;
-    }
-    if let Ok(mut t) = shared_state.truncated.lock() {
-        *t = truncated;
-    }
-    if let Ok(mut i) = shared_state.info.lock() {
-        *i = info;
-    }
+    // Update shared state (using blocking_lock since we're not in async context)
+    *shared_state.observation.blocking_lock() = observation;
+    *shared_state.reward.blocking_lock() = reward;
+    *shared_state.done.blocking_lock() = done;
+    *shared_state.truncated.blocking_lock() = truncated;
+    *shared_state.info.blocking_lock() = info;
 }

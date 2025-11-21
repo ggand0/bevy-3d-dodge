@@ -20,6 +20,7 @@ def evaluate_agent(
     n_episodes: int = 10,
     max_steps: int = 1000,
     port: int = 8000,
+    level: int = None,
     deterministic: bool = True,
     render: bool = False,
 ):
@@ -30,6 +31,7 @@ def evaluate_agent(
         n_episodes: Number of episodes to evaluate
         max_steps: Maximum steps per episode
         port: Bevy server port
+        level: Game difficulty level (1 or 2), auto-detected from path if not provided
         deterministic: Use deterministic policy (no exploration)
         render: Whether to render (not used, kept for compatibility)
 
@@ -40,9 +42,47 @@ def evaluate_agent(
     print(f"Loading model from {model_path}...")
     model = PPO.load(model_path)
     print(f"✓ Model loaded (policy: {model.policy.__class__.__name__})")
+
+    # Detect action space configuration from model
+    action_dim = model.action_space.shape[0]
+    action_space_map = {
+        3: "basic_3d",
+        4: "basic_4d_jump",
+        5: "tilt_5d",
+        6: "full_6d",
+    }
+    action_space_type = action_space_map.get(action_dim, "unknown")
+    print(f"  Detected action space: {action_space_type} ({action_dim}D)")
+
+    # Auto-detect level from model path if not provided
+    if level is None:
+        if "level1" in model_path.lower():
+            level = 1
+        elif "level2" in model_path.lower():
+            level = 2
+        else:
+            level = 2  # Default to level 2 (hard)
+            print(f"  ⚠ Could not detect level from path, defaulting to level {level}")
+
+    print(f"  Detected level: {level}")
     print()
 
-    # Create environment
+    # Create temporary environment to configure server
+    print(f"Configuring Bevy server (Level {level}, {action_space_type})...")
+    temp_env = BevyDodgeEnv(port=port)
+
+    # Configure the server with detected settings
+    if action_space_type != "unknown":
+        temp_env.configure(level=level, action_space_type=action_space_type)
+        temp_env.reset()  # Sync state
+    else:
+        print(f"⚠ Warning: Unknown action space dimension {action_dim}, using server default")
+        temp_env.configure(level=level)
+        temp_env.reset()
+
+    del temp_env
+
+    # Create real environment (queries updated action space)
     env = BevyDodgeEnv(port=port)
     print(f"✓ Connected to Bevy server at http://127.0.0.1:{port}")
     print(f"  Observation space: {env.observation_space}")
@@ -194,6 +234,13 @@ Examples:
         help="Bevy server port (default: 8000)",
     )
     parser.add_argument(
+        "--level",
+        type=int,
+        choices=[1, 2],
+        default=None,
+        help="Game difficulty level (1=Baseline, 2=Hard). Auto-detected from path if not provided",
+    )
+    parser.add_argument(
         "--stochastic",
         action="store_true",
         help="Use stochastic policy instead of deterministic",
@@ -229,6 +276,7 @@ Examples:
             n_episodes=args.episodes,
             max_steps=args.max_steps,
             port=args.port,
+            level=args.level,
             deterministic=not args.stochastic,
             render=args.render,
         )

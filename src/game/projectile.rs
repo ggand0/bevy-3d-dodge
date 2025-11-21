@@ -42,10 +42,30 @@ fn spawn_projectiles(
     if timer.timer.just_finished() {
         // Get player position to aim at
         if let Ok(player_transform) = player_query.get_single() {
-            // Spawn from the +Y side (where the thrower would be)
-            let spawn_x = rand::random::<f32>() * 3.0 - 1.5; // Random X between -1.5 and 1.5
-            let spawn_y = config.projectile_spawn_distance;
-            let spawn_z = 2.5; // Start higher for arc trajectory
+            let (spawn_x, spawn_y) = if config.random_spawn_position {
+                // Level 2: Spawn from random position in a 120° fan (±60° from +Y forward)
+                // Angle range: -π/3 to π/3 (-60° to +60°, centered on +Y axis)
+                let angle = (rand::random::<f32>() - 0.5) * (std::f32::consts::PI / 1.5); // Random angle -π/3 to π/3
+                let radius = config.projectile_spawn_distance;
+                // Rotate to face +Y: use sin for x, cos for y (rotated 90° from standard)
+                let x = angle.sin() * radius;
+                let y = angle.cos() * radius;
+                (x, y)
+            } else {
+                // Level 1: Spawn from the +Y side (where the thrower would be)
+                let x = rand::random::<f32>() * 3.0 - 1.5; // Random X between -1.5 and 1.5
+                let y = config.projectile_spawn_distance;
+                (x, y)
+            };
+
+            // Level-specific trajectory settings
+            let (spawn_z, flight_time) = if config.random_spawn_position {
+                // Level 2: Lower, faster trajectory (like a real dodgeball throw)
+                (1.5, 0.8)
+            } else {
+                // Level 1: Original high arc trajectory
+                (2.5, 2.0)
+            };
 
             // Target the player's current position
             let target_x = player_transform.translation.x;
@@ -56,9 +76,6 @@ fn spawn_projectiles(
             let dx = target_x - spawn_x;
             let dy = target_y - spawn_y;
             let dz = target_z - spawn_z;
-
-            // Time of flight (adjust for desired arc)
-            let flight_time = 2.0;
 
             // Initial velocity components
             let vx = dx / flight_time;

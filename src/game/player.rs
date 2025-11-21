@@ -13,12 +13,20 @@ pub struct VerticalVelocity(pub f32);
 #[derive(Component)]
 pub struct OnGround(pub bool);
 
+/// Player body tilt for continuous action space
+/// Pitch: forward/backward tilt, Roll: left/right tilt
+#[derive(Component)]
+pub struct PlayerTilt {
+    pub pitch: f32,  // Radians, positive = tilt forward
+    pub roll: f32,   // Radians, positive = tilt right
+}
+
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, spawn_player)
-            .add_systems(Update, (player_movement, player_jump, apply_velocity, apply_gravity));
+            .add_systems(Update, (player_movement, player_jump, apply_velocity, apply_tilt, apply_gravity));
     }
 }
 
@@ -43,14 +51,23 @@ fn spawn_player(
         Velocity(Vec2::ZERO),
         VerticalVelocity(0.0),
         OnGround(true),
+        PlayerTilt { pitch: 0.0, roll: 0.0 },
     ));
 }
 
 fn player_movement(
     keyboard_input: Res<ButtonInput<KeyCode>>,
+    control_mode: Res<crate::rl::environment::ControlMode>,
     mut query: Query<&mut Velocity, With<Player>>,
     config: Res<GameConfig>,
 ) {
+    use crate::rl::environment::ControlMode;
+
+    // Only process keyboard input in Human control mode
+    if *control_mode != ControlMode::Human {
+        return;
+    }
+
     if let Ok(mut velocity) = query.get_single_mut() {
         let mut direction = Vec2::ZERO;
 
@@ -76,12 +93,13 @@ fn player_movement(
             direction.y -= 1.0;
         }
 
-        // Only update velocity if keyboard input detected (don't override RL actions)
-        if keyboard_input.get_pressed().next().is_some() {
-            if direction.length() > 0.0 {
-                direction = direction.normalize();
-            }
+        // Normalize direction and apply to velocity
+        if direction.length() > 0.0 {
+            direction = direction.normalize();
             velocity.0 = direction * config.player_speed;
+        } else {
+            // No keys pressed - stop the player
+            velocity.0 = Vec2::ZERO;
         }
     }
 }
@@ -115,6 +133,27 @@ fn apply_velocity(
         // Clamp player position to play zone bounds
         transform.translation.x = transform.translation.x.clamp(-x_bound, x_bound);
         transform.translation.y = transform.translation.y.clamp(-y_bound, y_bound);
+    }
+}
+
+fn apply_tilt(
+    mut query: Query<(&mut Transform, &PlayerTilt), With<Player>>,
+    time: Res<Time>,
+) {
+    const TILT_SMOOTHING: f32 = 10.0; // How quickly tilt interpolates
+
+    for (mut transform, tilt) in query.iter_mut() {
+        // Base rotation: capsule standing upright (90° around X-axis)
+        let base_rotation = Quat::from_rotation_x(std::f32::consts::FRAC_PI_2);
+
+        // Target rotation: base + tilt adjustments
+        // Pitch (forward/backward): rotation around local X-axis (left-right axis)
+        // Roll (left/right): rotation around local Y-axis (forward-backward axis)
+        let tilt_rotation = Quat::from_rotation_y(tilt.pitch) * Quat::from_rotation_x(tilt.roll);
+        let target_rotation = base_rotation * tilt_rotation;
+
+        // Smoothly interpolate to target rotation
+        transform.rotation = transform.rotation.slerp(target_rotation, TILT_SMOOTHING * time.delta_secs());
     }
 }
 

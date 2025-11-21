@@ -91,7 +91,7 @@ fn handle_collisions(
                 }
             }
 
-            info!("Game Over! Press R to restart.");
+            info!("Game Over!");
         }
     }
 }

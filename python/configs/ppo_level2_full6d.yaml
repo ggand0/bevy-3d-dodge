@@ -1,0 +1,35 @@
+# PPO Level 2 (Hard) Full 6D Action Space Configuration
+# Training with full continuous actions: [vx, vy, jump, pitch, roll, sprint]
+# This is the most complex action space with conditional jump mechanics
+# Usage: python python/train_ppo.py --config python/configs/ppo_level2_full6d.yaml
+
+algorithm: PPO
+port: 8000
+level: 2  # Difficulty level (1 = Baseline, 2 = Hard)
+action_space_type: full_6d  # 6D: [vx, vy, jump, pitch, roll, sprint]
+
+# Training
+total_timesteps: 750000  # Increase to 750K due to higher dimensional action space
+learning_rate: 0.0003
+
+# PPO-specific
+n_steps: 2048           # Standard rollout buffer size
+batch_size: 64          # Standard batch size
+n_epochs: 10            # Standard number of epochs
+gamma: 0.99
+gae_lambda: 0.95
+clip_range: 0.2
+ent_coef: 0.02          # Increase exploration for 6D space (more dimensions to explore)
+vf_coef: 0.5
+max_grad_norm: 0.5
+
+# Network architecture
+net_arch: [256, 256]    # Same architecture for fair comparison
+
+# Checkpointing & Evaluation
+save_freq: 25000        # Save every 25K steps
+eval_freq: 10000        # Evaluate every 10K steps
+n_eval_episodes: 10     # More episodes for robust evaluation
+
+# Device
+device: auto

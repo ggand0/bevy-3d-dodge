@@ -5,6 +5,20 @@ use crate::game::collision::GameState;
 use crate::game::player::Player;
 use crate::game::projectile::Projectile;
 
+/// Control mode for player input
+#[derive(Resource, Default, Clone, Copy, PartialEq, Eq)]
+pub enum ControlMode {
+    #[default]
+    Human,  // Keyboard/mouse control
+    RLAgent, // RL agent control via API
+}
+
+/// Training mode to prevent accidental interruptions during RL training
+#[derive(Resource, Default, Clone, Copy, PartialEq, Eq)]
+pub struct TrainingMode {
+    pub enabled: bool,
+}
+
 /// RL environment state management
 #[derive(Resource, Default)]
 pub struct RLEnvironmentState {

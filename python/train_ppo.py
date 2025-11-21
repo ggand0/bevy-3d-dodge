@@ -18,7 +18,7 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 
 from bevy_dodge_env import BevyDodgeEnv
-from config import DQNConfig  # Reuse same config class
+from config import TrainingConfig
 
 
 def make_env(port: int) -> gym.Env:
@@ -28,7 +28,7 @@ def make_env(port: int) -> gym.Env:
     return env
 
 
-def train(config: DQNConfig, config_name: Optional[str] = None, verbose: int = 1) -> None:
+def train(config: TrainingConfig, config_name: Optional[str] = None, verbose: int = 1) -> None:
     """Train PPO agent on Bevy dodge game.
 
     Args:
@@ -68,17 +68,41 @@ def train(config: DQNConfig, config_name: Optional[str] = None, verbose: int = 1
     print(f"GAE lambda:          {config.gae_lambda}")
     print(f"Clip range:          {config.clip_range}")
     print(f"Network arch:        {config.net_arch if config.net_arch else '[64, 64] (default)'}")
+    print(f"Difficulty level:    {config.level} ({'Baseline' if config.level == 1 else 'Hard'})")
     print()
     print(f"Models saved to:     {save_path}")
     print(f"Logs saved to:       {log_path}")
     print()
 
-    # Create environment
+    # First, create a temporary environment to configure the game
     print(f"Connecting to Bevy server at http://127.0.0.1:{config.port}")
+    temp_env = BevyDodgeEnv(port=config.port)
+
+    # Configure game settings (level and action space)
+    level_name = "Level 1 (Baseline)" if config.level == 1 else "Level 2 (Hard)"
+    action_space_type = getattr(config, 'action_space_type', 'discrete')
+    print(f"Configuring game: {level_name}, action space: {action_space_type}...")
+    temp_env.configure(level=config.level, action_space_type=action_space_type)
+    print(f"✓ Game configured: {level_name}, action space: {action_space_type}")
+
+    # Reset to ensure config is fully applied and synced to API server's shared state
+    # This ensures the next environment creation will query the correct action space
+    temp_env.reset()
+    del temp_env  # Close temporary environment
+    print()
+
+    # Now create the actual training environment (will query the updated action space)
+    print("Creating training environment with configured action space...")
     env = DummyVecEnv([lambda: make_env(config.port)])
     print(f"✓ Environment created")
     print(f"  Observation space: {env.observation_space}")
     print(f"  Action space: {env.action_space}")
+    print()
+
+    # Enable training mode to prevent accidental keyboard interruptions
+    print("Enabling training mode...")
+    env.envs[0].unwrapped.start_training()
+    print("✓ Training mode enabled - R key disabled, camera controls still available")
     print()
 
     # Create evaluation environment
@@ -164,6 +188,14 @@ def train(config: DQNConfig, config_name: Optional[str] = None, verbose: int = 1
         model.save(final_path)
         print(f"\n✓ Final model saved to {final_path}")
 
+        # Disable training mode
+        print("\nDisabling training mode...")
+        try:
+            env.envs[0].unwrapped.end_training()
+            print("✓ Training mode disabled - returning to human control")
+        except Exception as e:
+            print(f"⚠ Failed to disable training mode: {e}")
+
     # Close environments
     env.close()
     eval_env.close()
@@ -212,7 +244,7 @@ Examples:
     config_name = None
     if args.config:
         print(f"Loading configuration from: {args.config}")
-        config = DQNConfig.from_yaml(args.config)
+        config = TrainingConfig.from_yaml(args.config)
         config_name = args.config
     else:
         print("Error: --config is required")

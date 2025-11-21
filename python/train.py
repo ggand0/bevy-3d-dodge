@@ -23,7 +23,7 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 
 from bevy_dodge_env import BevyDodgeEnv
-from config import DQNConfig
+from config import TrainingConfig
 
 
 def make_env(port: int) -> gym.Env:
@@ -33,11 +33,11 @@ def make_env(port: int) -> gym.Env:
     return env
 
 
-def train(config: DQNConfig, config_name: Optional[str] = None, verbose: int = 1) -> None:
+def train(config: TrainingConfig, config_name: Optional[str] = None, verbose: int = 1) -> None:
     """Train DQN agent on Bevy dodge game.
 
     Args:
-        config: DQNConfig instance with all hyperparameters
+        config: TrainingConfig instance with all hyperparameters
         config_name: Name of config file (used for organizing results)
         verbose: Verbosity level
     """
@@ -84,6 +84,12 @@ def train(config: DQNConfig, config_name: Optional[str] = None, verbose: int = 1
     print(f"✓ Environment created")
     print(f"  Observation space: {env.observation_space}")
     print(f"  Action space: {env.action_space}")
+    print()
+
+    # Enable training mode to prevent accidental keyboard interruptions
+    print("Enabling training mode...")
+    env.envs[0].unwrapped.start_training()
+    print("✓ Training mode enabled - R key disabled, camera controls still available")
     print()
 
     # Create evaluation environment
@@ -168,6 +174,14 @@ def train(config: DQNConfig, config_name: Optional[str] = None, verbose: int = 1
         model.save(final_path)
         print(f"\n✓ Final model saved to {final_path}")
 
+        # Disable training mode
+        print("\nDisabling training mode...")
+        try:
+            env.envs[0].unwrapped.end_training()
+            print("✓ Training mode disabled - returning to human control")
+        except Exception as e:
+            print(f"⚠ Failed to disable training mode: {e}")
+
     # Close environments
     env.close()
     eval_env.close()
@@ -250,11 +264,11 @@ Examples:
     config_name = None
     if args.config:
         print(f"Loading configuration from: {args.config}")
-        config = DQNConfig.from_yaml(args.config)
+        config = TrainingConfig.from_yaml(args.config)
         config_name = args.config
     else:
         print("Using default configuration (no config file specified)")
-        config = DQNConfig()
+        config = TrainingConfig()
 
     # Override config with CLI arguments if provided
     if args.steps is not None:
