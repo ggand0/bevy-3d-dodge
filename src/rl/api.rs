@@ -41,7 +41,7 @@ impl Default for SharedEnvState {
 pub enum EnvCommand {
     Reset,
     StepDiscrete { action: usize },
-    StepContinuous { action: [f32; 5] },
+    StepContinuous { action: Vec<f32>, config: crate::config::ContinuousActionConfig },
     StartTraining,
     EndTraining,
     SetLevel { level: u8 },
@@ -179,19 +179,22 @@ async fn step_handler(
 
             EnvCommand::StepDiscrete { action }
         }
-        crate::config::ActionSpaceType::Continuous => {
-            // Expect array of 5 floats: [vx, vy, pitch, roll, sprint]
+        crate::config::ActionSpaceType::Continuous(cont_config) => {
+            // Expect array of floats with length matching config dimension
             let action_array = request.action.as_array()
                 .ok_or_else(|| AppError::InvalidAction("Action must be an array for continuous action space".to_string()))?;
 
-            if action_array.len() != 5 {
+            let expected_dim = cont_config.dimension();
+            if action_array.len() != expected_dim {
                 return Err(AppError::InvalidAction(format!(
-                    "Continuous action must have 5 components [vx, vy, pitch, roll, sprint], got {}",
+                    "Continuous action must have {} components for {}, got {}",
+                    expected_dim,
+                    cont_config.name(),
                     action_array.len()
                 )));
             }
 
-            let mut action = [0.0f32; 5];
+            let mut action = Vec::with_capacity(expected_dim);
             for (i, val) in action_array.iter().enumerate() {
                 let f = val.as_f64()
                     .ok_or_else(|| AppError::InvalidAction(format!("Action component {} must be a number", i)))?
@@ -199,15 +202,15 @@ async fn step_handler(
 
                 if f < -1.0 || f > 1.0 {
                     return Err(AppError::InvalidAction(format!(
-                        "Action component {} has value {} outside valid range [-1, 1]",
-                        i, f
+                        "Component {} ({}) has value {} outside valid range [-1, 1]",
+                        i, cont_config.component_names()[i], f
                     )));
                 }
 
-                action[i] = f;
+                action.push(f);
             }
 
-            EnvCommand::StepContinuous { action }
+            EnvCommand::StepContinuous { action, config: cont_config }
         }
     };
 
@@ -281,9 +284,9 @@ async fn action_space_handler(
             r#type: "Discrete".to_string(),
             n: 5,
         },
-        crate::config::ActionSpaceType::Continuous => ActionSpaceResponse::Box {
+        crate::config::ActionSpaceType::Continuous(cont_config) => ActionSpaceResponse::Box {
             r#type: "Box".to_string(),
-            shape: vec![5],  // [vx, vy, pitch, roll, sprint]
+            shape: vec![cont_config.dimension()],  // Dynamic dimension based on config
             low: -1.0,
             high: 1.0,
         },
@@ -345,9 +348,12 @@ async fn configure_handler(
     // Validate action_space_type if provided
     if let Some(ref action_space_type) = payload.action_space_type {
         let action_space_lower = action_space_type.to_lowercase();
-        if action_space_lower != "discrete" && action_space_lower != "continuous" {
+
+        // Check if it's discrete or a valid continuous config
+        if action_space_lower != "discrete" &&
+           crate::config::ContinuousActionConfig::from_str(&action_space_lower).is_none() {
             return Err(AppError::InvalidAction(format!(
-                "Invalid action_space_type: '{}'. Must be 'discrete' or 'continuous'",
+                "Invalid action_space_type: '{}'. Must be 'discrete' or a continuous variant (basic_3d, basic_4d_jump, tilt_5d, full_6d)",
                 action_space_type
             )));
         }

@@ -207,8 +207,8 @@ class BevyDodgeEnv(gym.Env):
         if level is not None and level not in (1, 2):
             raise ValueError(f"Invalid level: {level}. Must be 1 or 2")
 
-        if action_space_type is not None and action_space_type.lower() not in ("discrete", "continuous"):
-            raise ValueError(f"Invalid action_space_type: {action_space_type}. Must be 'discrete' or 'continuous'")
+        # Note: action_space_type validation is handled server-side
+        # Valid values: "discrete", "basic_3d", "basic_4d_jump", "tilt_5d", "full_6d"
 
         config_data = {}
         if level is not None:

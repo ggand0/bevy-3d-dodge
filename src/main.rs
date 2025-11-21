@@ -446,7 +446,7 @@ fn update_ui(
     if let Ok(mut text) = config_info_query.get_single_mut() {
         let action_space_str = match config.action_space_type {
             config::ActionSpaceType::Discrete => "Discrete",
-            config::ActionSpaceType::Continuous => "Continuous",
+            config::ActionSpaceType::Continuous(cont_config) => cont_config.name(),
         };
         **text = format!("Action Space: {}", action_space_str);
     }
@@ -583,7 +583,14 @@ fn handle_level_change(
 /// Handle RL API commands (reset, step, start/end training, set level)
 fn handle_rl_commands(
     mut command_rx: NonSendMut<mpsc::UnboundedReceiver<EnvCommand>>,
-    mut player_query: Query<(&mut Transform, &mut game::player::Velocity, &mut game::player::PlayerTilt, &MeshMaterial3d<StandardMaterial>), With<game::player::Player>>,
+    mut player_query: Query<(
+        &mut Transform,
+        &mut game::player::Velocity,
+        &mut game::player::PlayerTilt,
+        &mut game::player::VerticalVelocity,
+        &game::player::OnGround,
+        &MeshMaterial3d<StandardMaterial>
+    ), With<game::player::Player>>,
     mut game_state: ResMut<game::collision::GameState>,
     mut env_state: ResMut<RLEnvironmentState>,
     mut control_mode: ResMut<ControlMode>,
@@ -638,11 +645,12 @@ fn handle_rl_commands(
                 env_state.last_reward = 0.0;
 
                 // Reset player
-                if let Ok((mut transform, mut velocity, mut tilt, material_handle)) = player_query.get_single_mut() {
+                if let Ok((mut transform, mut velocity, mut tilt, mut v_vel, _on_ground, material_handle)) = player_query.get_single_mut() {
                     transform.translation = Vec3::new(0.0, 0.0, config.player_start_height);
                     velocity.0 = Vec2::ZERO;
                     tilt.pitch = 0.0;
                     tilt.roll = 0.0;
+                    v_vel.0 = 0.0;
 
                     // Reset player color to green
                     if let Some(material) = materials.get_mut(&material_handle.0) {
@@ -667,11 +675,12 @@ fn handle_rl_commands(
                 env_state.last_reward = 0.0;
 
                 // Reset player
-                if let Ok((mut transform, mut velocity, mut tilt, material_handle)) = player_query.get_single_mut() {
+                if let Ok((mut transform, mut velocity, mut tilt, mut v_vel, _on_ground, material_handle)) = player_query.get_single_mut() {
                     transform.translation = Vec3::new(0.0, 0.0, config.player_start_height);
                     velocity.0 = Vec2::ZERO;
                     tilt.pitch = 0.0;
                     tilt.roll = 0.0;
+                    v_vel.0 = 0.0;
 
                     // Reset player color to green
                     if let Some(material) = materials.get_mut(&material_handle.0) {
@@ -689,7 +698,7 @@ fn handle_rl_commands(
             EnvCommand::StepDiscrete { action } => {
                 // Parse and apply discrete action
                 if let Ok(rl_action) = rl::action::RLAction::from_index(action) {
-                    if let Ok((_, mut velocity, _, _)) = player_query.get_single_mut() {
+                    if let Ok((_, mut velocity, _, _, _, _)) = player_query.get_single_mut() {
                         rl::action::apply_action(rl_action, &mut velocity, &config);
                     }
                 }
@@ -697,11 +706,11 @@ fn handle_rl_commands(
                 // Increment step counter
                 env_state.episode_steps += 1;
             }
-            EnvCommand::StepContinuous { action } => {
+            EnvCommand::StepContinuous { action, config: cont_config } => {
                 // Parse and apply continuous action
-                if let Ok(continuous_action) = rl::action::ContinuousAction::from_array(action) {
-                    if let Ok((_, mut velocity, mut tilt, _)) = player_query.get_single_mut() {
-                        rl::action::apply_continuous_action(continuous_action, &mut velocity, &mut tilt, &config);
+                if let Ok(continuous_action) = rl::action::ContinuousAction::from_array(&action, cont_config) {
+                    if let Ok((_, mut velocity, mut tilt, mut v_vel, on_ground, _)) = player_query.get_single_mut() {
+                        rl::action::apply_continuous_action(continuous_action, &mut velocity, &mut tilt, &mut v_vel, &on_ground, &config);
                     }
                 }
 
@@ -733,13 +742,14 @@ fn handle_rl_commands(
 
                 // Update action space type if provided
                 if let Some(action_space_str) = action_space_type {
-                    let action_space = match action_space_str.to_lowercase().as_str() {
-                        "discrete" => config::ActionSpaceType::Discrete,
-                        "continuous" => config::ActionSpaceType::Continuous,
-                        _ => {
-                            warn!("Invalid action space type: {}. Ignoring.", action_space_str);
-                            continue;
-                        }
+                    let action_space_lower = action_space_str.to_lowercase();
+                    let action_space = if action_space_lower == "discrete" {
+                        config::ActionSpaceType::Discrete
+                    } else if let Some(cont_config) = config::ContinuousActionConfig::from_str(&action_space_lower) {
+                        config::ActionSpaceType::Continuous(cont_config)
+                    } else {
+                        warn!("Invalid action space type: {}. Ignoring.", action_space_str);
+                        continue;
                     };
 
                     config.action_space_type = action_space;
@@ -757,11 +767,12 @@ fn handle_rl_commands(
                 env_state.last_reward = 0.0;
 
                 // Reset player
-                if let Ok((mut transform, mut velocity, mut tilt, material_handle)) = player_query.get_single_mut() {
+                if let Ok((mut transform, mut velocity, mut tilt, mut v_vel, _on_ground, material_handle)) = player_query.get_single_mut() {
                     transform.translation = Vec3::new(0.0, 0.0, config.player_start_height);
                     velocity.0 = Vec2::ZERO;
                     tilt.pitch = 0.0;
                     tilt.roll = 0.0;
+                    v_vel.0 = 0.0;
 
                     // Reset player color to green
                     if let Some(material) = materials.get_mut(&material_handle.0) {

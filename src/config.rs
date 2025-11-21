@@ -7,13 +7,85 @@ use tokio::sync::Mutex;
 #[derive(Clone, Resource)]
 pub struct SharedGameConfig(pub Arc<Mutex<GameConfig>>);
 
+/// Continuous action space configurations
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ContinuousActionConfig {
+    /// 3D: [vx, vy, sprint] - Basic movement with sprint
+    Basic3D,
+    /// 4D: [vx, vy, sprint, jump] - Basic + jump control
+    BasicWithJump4D,
+    /// 5D: [vx, vy, pitch, roll, sprint] - Movement with tilt and sprint (current default)
+    Tilt5D,
+    /// 6D: [vx, vy, jump, pitch, roll, sprint] - Full control (conditional jump)
+    Full6D,
+}
+
+impl ContinuousActionConfig {
+    /// Get dimension of action space
+    pub fn dimension(&self) -> usize {
+        match self {
+            Self::Basic3D => 3,
+            Self::BasicWithJump4D => 4,
+            Self::Tilt5D => 5,
+            Self::Full6D => 6,
+        }
+    }
+
+    /// Get human-readable name
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Basic3D => "3D Basic (vx, vy, sprint)",
+            Self::BasicWithJump4D => "4D with Jump (vx, vy, sprint, jump)",
+            Self::Tilt5D => "5D with Tilt (vx, vy, pitch, roll, sprint)",
+            Self::Full6D => "6D Full (vx, vy, jump, pitch, roll, sprint)",
+        }
+    }
+
+    /// Get component names for debugging
+    pub fn component_names(&self) -> Vec<&'static str> {
+        match self {
+            Self::Basic3D => vec!["vx", "vy", "sprint"],
+            Self::BasicWithJump4D => vec!["vx", "vy", "sprint", "jump"],
+            Self::Tilt5D => vec!["vx", "vy", "pitch", "roll", "sprint"],
+            Self::Full6D => vec!["vx", "vy", "jump", "pitch", "roll", "sprint"],
+        }
+    }
+
+    /// Parse from string (for API)
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "basic3d" | "basic_3d" | "3d" => Some(Self::Basic3D),
+            "basic4d" | "basic_4d" | "jump4d" | "4d_jump" => Some(Self::BasicWithJump4D),
+            "tilt5d" | "tilt_5d" | "5d" => Some(Self::Tilt5D),
+            "full6d" | "full_6d" | "6d" => Some(Self::Full6D),
+            _ => None,
+        }
+    }
+
+    /// Convert to string for API
+    pub fn to_string(&self) -> &'static str {
+        match self {
+            Self::Basic3D => "basic_3d",
+            Self::BasicWithJump4D => "basic_4d_jump",
+            Self::Tilt5D => "tilt_5d",
+            Self::Full6D => "full_6d",
+        }
+    }
+}
+
+impl Default for ContinuousActionConfig {
+    fn default() -> Self {
+        Self::Tilt5D  // Current default (matches existing 5D implementation)
+    }
+}
+
 /// Action space types for RL training
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActionSpaceType {
     /// Discrete action space: 5 actions (NOOP, Up, Down, Left, Right)
     Discrete,
-    /// Continuous action space: Box(4,) for (vx, vy, pitch, roll)
-    Continuous,
+    /// Continuous action space with configurable dimensions
+    Continuous(ContinuousActionConfig),
 }
 
 impl Default for ActionSpaceType {
@@ -95,7 +167,7 @@ impl GameConfig {
             projectile_spawn_distance: 20.0,
             max_projectiles: 10,
             random_spawn_position: false,     // Spawn from fixed +Y side
-            action_space_type: ActionSpaceType::default(),
+            action_space_type: ActionSpaceType::Continuous(ContinuousActionConfig::default()),
             sprint_multiplier: 0.5,  // Sprint gives 1.5x speed (5.0 -> 7.5)
         }
     }
@@ -111,7 +183,7 @@ impl GameConfig {
             projectile_spawn_distance: 20.0,
             max_projectiles: 25,              // 2.5x more projectiles (was 10, now 25)
             random_spawn_position: true,      // Spawn from random positions in a 120° fan
-            action_space_type: ActionSpaceType::default(),
+            action_space_type: ActionSpaceType::Continuous(ContinuousActionConfig::default()),
             sprint_multiplier: 0.5,  // Sprint gives 1.5x speed (5.0 -> 7.5)
         }
     }
