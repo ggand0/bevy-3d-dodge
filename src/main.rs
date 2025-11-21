@@ -47,6 +47,7 @@ fn main() {
             handle_reset,
             handle_level_change,
             update_ui,
+            update_action_debug,
             handle_rl_commands,
             update_rl_state
         ))
@@ -347,6 +348,24 @@ fn setup_scene(
         TrainingModeText,
     ));
 
+    // Action debug text (shown during training mode, left side below training indicator)
+    commands.spawn((
+        Text::new("vx: 0.00 | vy: 0.00 | sprint: 0.00 | speed: 5.00"),
+        TextFont {
+            font_size: 16.0,
+            ..default()
+        },
+        TextColor(Color::srgb(0.8, 0.8, 1.0)), // Light blue
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(60.0),
+            left: Val::Px(10.0),
+            display: Display::None,
+            ..default()
+        },
+        ActionDebugText,
+    ));
+
     // Camera help text for free camera mode
     commands.spawn((
         Text::new("Free Cam: LMB+Drag: Look | MMB+Drag: Pan | Scroll: Zoom | UO: Up/Down"),
@@ -406,6 +425,9 @@ struct CameraDebugText;
 #[derive(Component)]
 struct CoordinateAxis;
 
+#[derive(Component)]
+struct ActionDebugText;
+
 fn update_ui(
     game_state: Res<game::collision::GameState>,
     debug_mode: Res<game::camera::CameraDebugMode>,
@@ -413,11 +435,12 @@ fn update_ui(
     training_mode: Res<TrainingMode>,
     level: Res<Level>,
     config: Res<config::GameConfig>,
-    mut game_over_query: Query<&mut Node, (With<GameOverText>, Without<CameraDebugText>, Without<TrainingModeText>, Without<LevelText>, Without<ConfigInfoText>)>,
-    mut training_text_query: Query<&mut Node, (With<TrainingModeText>, Without<CameraDebugText>, Without<GameOverText>, Without<LevelText>, Without<ConfigInfoText>)>,
+    mut game_over_query: Query<&mut Node, (With<GameOverText>, Without<CameraDebugText>, Without<TrainingModeText>, Without<LevelText>, Without<ConfigInfoText>, Without<ActionDebugText>)>,
+    mut training_text_query: Query<&mut Node, (With<TrainingModeText>, Without<CameraDebugText>, Without<GameOverText>, Without<LevelText>, Without<ConfigInfoText>, Without<ActionDebugText>)>,
     mut level_text_query: Query<&mut Text, (With<LevelText>, Without<ConfigInfoText>)>,
     mut config_info_query: Query<&mut Text, (With<ConfigInfoText>, Without<LevelText>)>,
-    mut debug_text_query: Query<&mut Node, (With<CameraDebugText>, Without<GameOverText>, Without<TrainingModeText>, Without<LevelText>, Without<ConfigInfoText>)>,
+    mut debug_text_query: Query<&mut Node, (With<CameraDebugText>, Without<GameOverText>, Without<TrainingModeText>, Without<LevelText>, Without<ConfigInfoText>, Without<ActionDebugText>)>,
+    mut action_debug_query: Query<&mut Node, With<ActionDebugText>>,
     mut axis_query: Query<&mut Visibility, With<CoordinateAxis>>,
 ) {
     if let Ok(mut node) = game_over_query.get_single_mut() {
@@ -430,6 +453,15 @@ fn update_ui(
 
     // Training mode indicator is visible when training mode is enabled
     if let Ok(mut node) = training_text_query.get_single_mut() {
+        node.display = if training_mode.enabled {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+
+    // Action debug text is visible when training mode is enabled
+    if let Ok(mut node) = action_debug_query.get_single_mut() {
         node.display = if training_mode.enabled {
             Display::Flex
         } else {
@@ -467,6 +499,34 @@ fn update_ui(
         } else {
             Visibility::Hidden
         };
+    }
+}
+
+fn update_action_debug(
+    player_query: Query<&game::player::Velocity, With<game::player::Player>>,
+    config: Res<GameConfig>,
+    mut debug_text_query: Query<&mut Text, With<ActionDebugText>>,
+) {
+    if let Ok(velocity) = player_query.get_single() {
+        if let Ok(mut text) = debug_text_query.get_single_mut() {
+            let vx = velocity.0.x;
+            let vy = velocity.0.y;
+            let speed = velocity.0.length();
+
+            // Calculate sprint value from speed
+            // speed = base_speed * (1.0 + sprint * multiplier)
+            // sprint = (speed / base_speed - 1.0) / multiplier
+            let sprint = if config.sprint_multiplier > 0.0 {
+                ((speed / config.player_speed - 1.0) / config.sprint_multiplier).max(0.0).min(1.0)
+            } else {
+                0.0
+            };
+
+            **text = format!(
+                "vx: {:.2} | vy: {:.2} | sprint: {:.2} | speed: {:.2}",
+                vx, vy, sprint, speed
+            );
+        }
     }
 }
 

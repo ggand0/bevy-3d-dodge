@@ -168,7 +168,7 @@ impl GameConfig {
             max_projectiles: 10,
             random_spawn_position: false,     // Spawn from fixed +Y side
             action_space_type: ActionSpaceType::Continuous(ContinuousActionConfig::default()),
-            sprint_multiplier: 0.5,  // Sprint gives 1.5x speed (5.0 -> 7.5)
+            sprint_multiplier: 1.0,  // Sprint gives 2.0x speed (5.0 -> 10.0)
         }
     }
 
@@ -184,7 +184,7 @@ impl GameConfig {
             max_projectiles: 25,              // 2.5x more projectiles (was 10, now 25)
             random_spawn_position: true,      // Spawn from random positions in a 120° fan
             action_space_type: ActionSpaceType::Continuous(ContinuousActionConfig::default()),
-            sprint_multiplier: 0.5,  // Sprint gives 1.5x speed (5.0 -> 7.5)
+            sprint_multiplier: 1.0,  // Sprint gives 2.0x speed (5.0 -> 10.0)
         }
     }
 }
