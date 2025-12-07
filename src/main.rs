@@ -192,6 +192,51 @@ fn setup_scene(
         Transform::from_xyz(zone_width / 2.0, 0.0, zone_line_height / 2.0),
     ));
 
+    // Spawn arc visualization (shows where projectiles spawn from in Level 2)
+    // Arc at spawn_distance=20, ±60° from +Y axis (120° total fan)
+    let spawn_radius = 20.0;
+    let arc_height = 0.1;  // Slightly above ground
+    let arc_segments = 30;  // Number of points along the arc
+    let half_angle = std::f32::consts::PI / 3.0;  // 60 degrees = π/3
+
+    let arc_material = materials.add(StandardMaterial {
+        base_color: Color::srgba(1.0, 0.3, 0.3, 0.8),  // Red-ish for danger zone
+        alpha_mode: AlphaMode::Blend,
+        emissive: Color::srgb(0.5, 0.1, 0.1).into(),
+        unlit: true,
+        ..default()
+    });
+
+    // Create arc segments
+    for i in 0..arc_segments {
+        let t = i as f32 / (arc_segments - 1) as f32;  // 0 to 1
+        let angle = -half_angle + t * 2.0 * half_angle;  // -60° to +60°
+
+        let x = angle.sin() * spawn_radius;
+        let y = angle.cos() * spawn_radius;
+
+        commands.spawn((
+            Mesh3d(meshes.add(Sphere::new(0.15))),
+            MeshMaterial3d(arc_material.clone()),
+            Transform::from_xyz(x, y, arc_height),
+            SpawnArcMarker,
+        ));
+    }
+
+    // Add edge markers (larger spheres at ±60°)
+    let edge_angles = [-half_angle, half_angle];
+    for angle in edge_angles {
+        let x = angle.sin() * spawn_radius;
+        let y = angle.cos() * spawn_radius;
+
+        commands.spawn((
+            Mesh3d(meshes.add(Sphere::new(0.3))),
+            MeshMaterial3d(arc_material.clone()),
+            Transform::from_xyz(x, y, arc_height),
+            SpawnArcMarker,
+        ));
+    }
+
     // Coordinate axes visualization (hidden by default, shown in debug mode)
     let axis_length = 5.0;
     let axis_thickness = 0.1;
@@ -424,6 +469,9 @@ struct CameraDebugText;
 
 #[derive(Component)]
 struct CoordinateAxis;
+
+#[derive(Component)]
+struct SpawnArcMarker;
 
 #[derive(Component)]
 struct ActionDebugText;
