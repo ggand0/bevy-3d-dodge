@@ -9,13 +9,16 @@ import argparse
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 
 import gymnasium as gym
+import matplotlib.pyplot as plt
+import numpy as np
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
+from tensorboard.backend.event_processing import event_accumulator
 
 from bevy_dodge_env import BevyDodgeEnv
 from config import TrainingConfig
@@ -26,6 +29,142 @@ def make_env(port: int) -> gym.Env:
     env = BevyDodgeEnv(port=port)
     env = Monitor(env)  # Wrap for logging
     return env
+
+
+def load_tensorboard_data(logdir: Path) -> Dict[str, List[Tuple[int, float]]]:
+    """Load data from TensorBoard event files.
+
+    Args:
+        logdir: Directory containing TensorBoard logs
+
+    Returns:
+        Dictionary mapping metric names to list of (step, value) tuples
+    """
+    run_dirs = sorted(logdir.glob("PPO_*"))
+    if not run_dirs:
+        return {}
+
+    latest_run = run_dirs[-1]
+    ea = event_accumulator.EventAccumulator(str(latest_run))
+    ea.Reload()
+
+    data = {}
+    for tag in ea.Tags()['scalars']:
+        events = ea.Scalars(tag)
+        data[tag] = [(e.step, e.value) for e in events]
+
+    return data
+
+
+def plot_learning_curves(log_path: Path, output_dir: Path) -> None:
+    """Plot learning curves after training completes.
+
+    Args:
+        log_path: Directory containing TensorBoard logs
+        output_dir: Directory to save plots
+    """
+    print("\nGenerating learning curves...")
+
+    data = load_tensorboard_data(log_path)
+    if not data:
+        print("⚠ No TensorBoard data found, skipping plots")
+        return
+
+    plots_dir = output_dir / "plots"
+    plots_dir.mkdir(parents=True, exist_ok=True)
+
+    plt.style.use('seaborn-v0_8-darkgrid')
+
+    # Combined learning curves plot (2x2)
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+    # 1. Episode Reward
+    if 'rollout/ep_rew_mean' in data:
+        steps, rewards = zip(*data['rollout/ep_rew_mean'])
+        axes[0, 0].plot(steps, rewards, linewidth=1.5, alpha=0.6, label='Raw')
+        window = min(50, max(1, len(rewards) // 10))
+        if window > 1 and len(rewards) >= window:
+            rolling_mean = np.convolve(rewards, np.ones(window)/window, mode='valid')
+            axes[0, 0].plot(steps[window-1:], rolling_mean, linewidth=2.5, color='red', label=f'Smoothed (w={window})')
+        axes[0, 0].set_title('Episode Reward', fontsize=12, fontweight='bold')
+        axes[0, 0].set_xlabel('Timesteps')
+        axes[0, 0].set_ylabel('Mean Reward')
+        axes[0, 0].legend(loc='lower right')
+        axes[0, 0].grid(True, alpha=0.3)
+
+    # 2. Episode Length
+    if 'rollout/ep_len_mean' in data:
+        steps, lengths = zip(*data['rollout/ep_len_mean'])
+        axes[0, 1].plot(steps, lengths, linewidth=1.5, alpha=0.6, label='Raw')
+        window = min(50, max(1, len(lengths) // 10))
+        if window > 1 and len(lengths) >= window:
+            rolling_mean = np.convolve(lengths, np.ones(window)/window, mode='valid')
+            axes[0, 1].plot(steps[window-1:], rolling_mean, linewidth=2.5, color='green', label=f'Smoothed (w={window})')
+        axes[0, 1].set_title('Episode Length', fontsize=12, fontweight='bold')
+        axes[0, 1].set_xlabel('Timesteps')
+        axes[0, 1].set_ylabel('Mean Length (steps)')
+        axes[0, 1].legend(loc='lower right')
+        axes[0, 1].grid(True, alpha=0.3)
+
+    # 3. Eval Reward (from EvalCallback)
+    if 'eval/mean_reward' in data:
+        steps, rewards = zip(*data['eval/mean_reward'])
+        axes[1, 0].plot(steps, rewards, 'o-', linewidth=2, markersize=6, color='blue')
+        axes[1, 0].set_title('Evaluation Reward', fontsize=12, fontweight='bold')
+        axes[1, 0].set_xlabel('Timesteps')
+        axes[1, 0].set_ylabel('Mean Eval Reward')
+        axes[1, 0].grid(True, alpha=0.3)
+        # Mark best
+        best_idx = np.argmax(rewards)
+        axes[1, 0].scatter([steps[best_idx]], [rewards[best_idx]], color='gold', s=150, zorder=5, marker='*', label=f'Best: {rewards[best_idx]:.1f}')
+        axes[1, 0].legend()
+    else:
+        axes[1, 0].text(0.5, 0.5, 'No eval data', ha='center', va='center', transform=axes[1, 0].transAxes)
+        axes[1, 0].set_title('Evaluation Reward', fontsize=12, fontweight='bold')
+
+    # 4. Eval Episode Length
+    if 'eval/mean_ep_length' in data:
+        steps, lengths = zip(*data['eval/mean_ep_length'])
+        axes[1, 1].plot(steps, lengths, 'o-', linewidth=2, markersize=6, color='orange')
+        axes[1, 1].set_title('Evaluation Episode Length', fontsize=12, fontweight='bold')
+        axes[1, 1].set_xlabel('Timesteps')
+        axes[1, 1].set_ylabel('Mean Eval Length')
+        axes[1, 1].grid(True, alpha=0.3)
+        # Mark best
+        best_idx = np.argmax(lengths)
+        axes[1, 1].scatter([steps[best_idx]], [lengths[best_idx]], color='gold', s=150, zorder=5, marker='*', label=f'Best: {lengths[best_idx]:.0f}')
+        axes[1, 1].legend()
+    else:
+        axes[1, 1].text(0.5, 0.5, 'No eval data', ha='center', va='center', transform=axes[1, 1].transAxes)
+        axes[1, 1].set_title('Evaluation Episode Length', fontsize=12, fontweight='bold')
+
+    plt.suptitle('PPO Training - Learning Curves', fontsize=14, fontweight='bold', y=0.995)
+    plt.tight_layout()
+    plt.savefig(plots_dir / 'learning_curves.png', dpi=150)
+    print(f"✓ Saved: {plots_dir / 'learning_curves.png'}")
+    plt.close()
+
+    # Print summary statistics
+    print("\n" + "=" * 50)
+    print("Training Summary")
+    print("=" * 50)
+
+    if 'rollout/ep_rew_mean' in data:
+        rewards = [v for _, v in data['rollout/ep_rew_mean']]
+        print(f"Final reward:    {rewards[-1]:.2f}")
+        print(f"Peak reward:     {max(rewards):.2f}")
+
+    if 'rollout/ep_len_mean' in data:
+        lengths = [v for _, v in data['rollout/ep_len_mean']]
+        print(f"Final ep length: {lengths[-1]:.0f}")
+        print(f"Peak ep length:  {max(lengths):.0f}")
+
+    if 'eval/mean_reward' in data:
+        eval_rewards = [v for _, v in data['eval/mean_reward']]
+        print(f"Best eval reward: {max(eval_rewards):.2f}")
+        print(f"Final eval reward: {eval_rewards[-1]:.2f}")
+
+    print("=" * 50)
 
 
 def train(config: TrainingConfig, config_name: Optional[str] = None, verbose: int = 1) -> None:
@@ -213,6 +352,9 @@ def train(config: TrainingConfig, config_name: Optional[str] = None, verbose: in
     # Close environments
     env.close()
     eval_env.close()
+
+    # Plot learning curves
+    plot_learning_curves(log_path, run_dir)
 
 
 def main() -> None:
