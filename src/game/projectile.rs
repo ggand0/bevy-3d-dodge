@@ -43,9 +43,10 @@ fn spawn_projectiles(
         // Get player position to aim at
         if let Ok(player_transform) = player_query.get_single() {
             let (spawn_x, spawn_y) = if config.random_spawn_position {
-                // Level 2: Spawn from random position in a 120° fan (±60° from +Y forward)
-                // Angle range: -π/3 to π/3 (-60° to +60°, centered on +Y axis)
-                let angle = (rand::random::<f32>() - 0.5) * (std::f32::consts::PI / 1.5); // Random angle -π/3 to π/3
+                // Spawn from random position within configurable fan angle
+                // Convert degrees to radians: spawn_angle_degrees is the half-angle
+                let half_angle_rad = config.spawn_angle_degrees.to_radians();
+                let angle = (rand::random::<f32>() - 0.5) * 2.0 * half_angle_rad; // Random angle within ±half_angle
                 let radius = config.projectile_spawn_distance;
                 // Rotate to face +Y: use sin for x, cos for y (rotated 90° from standard)
                 let x = angle.sin() * radius;

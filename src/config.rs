@@ -143,7 +143,8 @@ pub struct GameConfig {
     pub max_projectiles: usize,
     pub random_spawn_position: bool,  // If true, spawn from random positions on a circle
     pub action_space_type: ActionSpaceType,  // Discrete or Continuous action space
-    pub sprint_multiplier: f32,  // Speed multiplier when sprinting (e.g., 0.5 = 1.5x speed)
+    pub sprint_multiplier: f32,  // Speed multiplier when sprinting (e.g., 1.0 = 2x speed, 2.0 = 3x speed)
+    pub spawn_angle_degrees: f32,  // Half-angle for spawn fan in degrees (e.g., 60 = ±60° = 120° total)
 }
 
 impl GameConfig {
@@ -168,7 +169,8 @@ impl GameConfig {
             max_projectiles: 10,
             random_spawn_position: false,     // Spawn from fixed +Y side
             action_space_type: ActionSpaceType::Continuous(ContinuousActionConfig::default()),
-            sprint_multiplier: 1.0,  // Sprint gives 2.0x speed (5.0 -> 10.0)
+            sprint_multiplier: 2.0,  // Sprint gives 3.0x speed (5.0 -> 15.0)
+            spawn_angle_degrees: 60.0,  // ±60° = 120° total fan (not used when random_spawn_position=false)
         }
     }
 
@@ -182,9 +184,10 @@ impl GameConfig {
             projectile_spawn_interval: 0.5,   // 4x faster spawning (was 2.0s, now 0.5s)
             projectile_spawn_distance: 20.0,
             max_projectiles: 25,              // 2.5x more projectiles (was 10, now 25)
-            random_spawn_position: true,      // Spawn from random positions in a 120° fan
+            random_spawn_position: true,      // Spawn from random positions in spawn_angle fan
             action_space_type: ActionSpaceType::Continuous(ContinuousActionConfig::default()),
-            sprint_multiplier: 1.0,  // Sprint gives 2.0x speed (5.0 -> 10.0)
+            sprint_multiplier: 2.0,  // Sprint gives 3.0x speed (5.0 -> 15.0)
+            spawn_angle_degrees: 60.0,  // ±60° = 120° total fan
         }
     }
 }

@@ -327,7 +327,7 @@ fn setup_scene(
 
     // UI Text - Controls
     commands.spawn((
-        Text::new("WASD: Move | Space: Jump | R: Reset | L: Change Level | F1: Free Cam | F2: Toggle Axes | ESC: Quit"),
+        Text::new("WASD: Move | Shift: Sprint | Space: Jump | R: Reset | L: Level | F1: Free Cam | ESC: Quit"),
         TextFont {
             font_size: 20.0,
             ..default()
@@ -825,7 +825,7 @@ fn handle_rl_commands(
                 // Increment step counter
                 env_state.episode_steps += 1;
             }
-            EnvCommand::Configure { level: level_num, action_space_type } => {
+            EnvCommand::Configure { level: level_num, action_space_type, sprint_multiplier, spawn_angle_degrees } => {
                 // Update level if provided
                 if let Some(level_num) = level_num {
                     let new_level = match level_num {
@@ -862,6 +862,18 @@ fn handle_rl_commands(
 
                     config.action_space_type = action_space;
                     info!("Action space type set to: {:?}", action_space);
+                }
+
+                // Update sprint_multiplier if provided
+                if let Some(mult) = sprint_multiplier {
+                    config.sprint_multiplier = mult;
+                    info!("Sprint multiplier set to: {} ({}x speed at full sprint)", mult, 1.0 + mult);
+                }
+
+                // Update spawn_angle_degrees if provided
+                if let Some(angle) = spawn_angle_degrees {
+                    config.spawn_angle_degrees = angle;
+                    info!("Spawn angle set to: ±{}° ({}° total fan)", angle, angle * 2.0);
                 }
 
                 // Sync shared config for API server

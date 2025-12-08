@@ -45,7 +45,12 @@ pub enum EnvCommand {
     StartTraining,
     EndTraining,
     SetLevel { level: u8 },
-    Configure { level: Option<u8>, action_space_type: Option<String> },
+    Configure {
+        level: Option<u8>,
+        action_space_type: Option<String>,
+        sprint_multiplier: Option<f32>,
+        spawn_angle_degrees: Option<f32>,
+    },
 }
 
 /// API server state
@@ -74,6 +79,8 @@ struct SetLevelRequest {
 struct ConfigureRequest {
     level: Option<u8>,
     action_space_type: Option<String>,
+    sprint_multiplier: Option<f32>,  // Speed multiplier (e.g., 2.0 = 3x speed at full sprint)
+    spawn_angle_degrees: Option<f32>,  // Half-angle for spawn fan (e.g., 30 = ±30° = 60° total)
 }
 
 #[derive(Serialize)]
@@ -359,11 +366,33 @@ async fn configure_handler(
         }
     }
 
+    // Validate spawn_angle_degrees if provided
+    if let Some(angle) = payload.spawn_angle_degrees {
+        if angle <= 0.0 || angle > 180.0 {
+            return Err(AppError::InvalidAction(format!(
+                "Invalid spawn_angle_degrees: {}. Must be between 0 and 180",
+                angle
+            )));
+        }
+    }
+
+    // Validate sprint_multiplier if provided
+    if let Some(mult) = payload.sprint_multiplier {
+        if mult < 0.0 || mult > 10.0 {
+            return Err(AppError::InvalidAction(format!(
+                "Invalid sprint_multiplier: {}. Must be between 0 and 10",
+                mult
+            )));
+        }
+    }
+
     state
         .command_tx
         .send(EnvCommand::Configure {
             level: payload.level,
             action_space_type: payload.action_space_type,
+            sprint_multiplier: payload.sprint_multiplier,
+            spawn_angle_degrees: payload.spawn_angle_degrees,
         })
         .map_err(|_| AppError::InternalError("Failed to send configure command".to_string()))?;
 

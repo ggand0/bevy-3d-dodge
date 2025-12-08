@@ -78,12 +78,26 @@ def train(config: TrainingConfig, config_name: Optional[str] = None, verbose: in
     print(f"Connecting to Bevy server at http://127.0.0.1:{config.port}")
     temp_env = BevyDodgeEnv(port=config.port)
 
-    # Configure game settings (level and action space)
+    # Configure game settings (level, action space, and optional params)
     level_name = "Level 1 (Baseline)" if config.level == 1 else "Level 2 (Hard)"
     action_space_type = getattr(config, 'action_space_type', 'discrete')
-    print(f"Configuring game: {level_name}, action space: {action_space_type}...")
-    temp_env.configure(level=config.level, action_space_type=action_space_type)
-    print(f"✓ Game configured: {level_name}, action space: {action_space_type}")
+    sprint_multiplier = getattr(config, 'sprint_multiplier', None)
+    spawn_angle_degrees = getattr(config, 'spawn_angle_degrees', None)
+
+    config_parts = [f"{level_name}", f"action space: {action_space_type}"]
+    if sprint_multiplier is not None:
+        config_parts.append(f"sprint: {sprint_multiplier} ({1+sprint_multiplier}x)")
+    if spawn_angle_degrees is not None:
+        config_parts.append(f"spawn angle: ±{spawn_angle_degrees}°")
+    print(f"Configuring game: {', '.join(config_parts)}...")
+
+    temp_env.configure(
+        level=config.level,
+        action_space_type=action_space_type,
+        sprint_multiplier=sprint_multiplier,
+        spawn_angle_degrees=spawn_angle_degrees,
+    )
+    print(f"✓ Game configured: {', '.join(config_parts)}")
 
     # Reset to ensure config is fully applied and synced to API server's shared state
     # This ensures the next environment creation will query the correct action space

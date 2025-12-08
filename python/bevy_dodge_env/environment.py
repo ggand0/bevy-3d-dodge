@@ -181,12 +181,16 @@ class BevyDodgeEnv(gym.Env):
         self,
         level: Optional[int] = None,
         action_space_type: Optional[str] = None,
+        sprint_multiplier: Optional[float] = None,
+        spawn_angle_degrees: Optional[float] = None,
     ) -> None:
         """Configure game settings.
 
         Args:
             level: Optional level number (1 for baseline, 2 for hard)
-            action_space_type: Optional action space type ("discrete" or "continuous")
+            action_space_type: Optional action space type ("discrete", "basic_3d", etc.)
+            sprint_multiplier: Optional sprint speed multiplier (e.g., 2.0 = 3x speed at full sprint)
+            spawn_angle_degrees: Optional half-angle for spawn fan (e.g., 30 = ±30° = 60° total)
 
         Note:
             - This is the preferred way to configure the game before training
@@ -197,15 +201,20 @@ class BevyDodgeEnv(gym.Env):
 
         Example:
             >>> env = BevyDodgeEnv()
-            >>> env.configure(action_space_type="continuous")
+            >>> env.configure(action_space_type="basic_3d", sprint_multiplier=2.0, spawn_angle_degrees=30)
             >>> env.reset()  # Ensures config is synced
-            >>> # Or: del env; env = BevyDodgeEnv()  # New env queries updated action space
         """
-        if level is None and action_space_type is None:
+        if all(p is None for p in [level, action_space_type, sprint_multiplier, spawn_angle_degrees]):
             raise ValueError("At least one configuration parameter must be provided")
 
         if level is not None and level not in (1, 2):
             raise ValueError(f"Invalid level: {level}. Must be 1 or 2")
+
+        if sprint_multiplier is not None and (sprint_multiplier < 0 or sprint_multiplier > 10):
+            raise ValueError(f"Invalid sprint_multiplier: {sprint_multiplier}. Must be between 0 and 10")
+
+        if spawn_angle_degrees is not None and (spawn_angle_degrees <= 0 or spawn_angle_degrees > 180):
+            raise ValueError(f"Invalid spawn_angle_degrees: {spawn_angle_degrees}. Must be between 0 and 180")
 
         # Note: action_space_type validation is handled server-side
         # Valid values: "discrete", "basic_3d", "basic_4d_jump", "tilt_5d", "full_6d"
@@ -215,6 +224,10 @@ class BevyDodgeEnv(gym.Env):
             config_data["level"] = level
         if action_space_type is not None:
             config_data["action_space_type"] = action_space_type
+        if sprint_multiplier is not None:
+            config_data["sprint_multiplier"] = sprint_multiplier
+        if spawn_angle_degrees is not None:
+            config_data["spawn_angle_degrees"] = spawn_angle_degrees
 
         try:
             response = requests.post(

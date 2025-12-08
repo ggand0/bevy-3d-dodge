@@ -23,6 +23,8 @@ def evaluate_agent(
     level: int = None,
     deterministic: bool = True,
     render: bool = False,
+    sprint_multiplier: float = None,
+    spawn_angle_degrees: float = None,
 ):
     """Evaluate trained PPO agent.
 
@@ -68,16 +70,31 @@ def evaluate_agent(
     print()
 
     # Create temporary environment to configure server
-    print(f"Configuring Bevy server (Level {level}, {action_space_type})...")
+    config_parts = [f"Level {level}", action_space_type]
+    if sprint_multiplier is not None:
+        config_parts.append(f"sprint: {sprint_multiplier} ({1+sprint_multiplier}x)")
+    if spawn_angle_degrees is not None:
+        config_parts.append(f"spawn angle: ±{spawn_angle_degrees}°")
+    print(f"Configuring Bevy server ({', '.join(config_parts)})...")
+
     temp_env = BevyDodgeEnv(port=port)
 
     # Configure the server with detected settings
     if action_space_type != "unknown":
-        temp_env.configure(level=level, action_space_type=action_space_type)
+        temp_env.configure(
+            level=level,
+            action_space_type=action_space_type,
+            sprint_multiplier=sprint_multiplier,
+            spawn_angle_degrees=spawn_angle_degrees,
+        )
         temp_env.reset()  # Sync state
     else:
         print(f"⚠ Warning: Unknown action space dimension {action_dim}, using server default")
-        temp_env.configure(level=level)
+        temp_env.configure(
+            level=level,
+            sprint_multiplier=sprint_multiplier,
+            spawn_angle_degrees=spawn_angle_degrees,
+        )
         temp_env.reset()
 
     del temp_env
@@ -250,6 +267,18 @@ Examples:
         action="store_true",
         help="Render episodes (Bevy handles rendering)",
     )
+    parser.add_argument(
+        "--sprint-multiplier",
+        type=float,
+        default=None,
+        help="Sprint speed multiplier (e.g., 1.0=2x, 2.0=3x). Uses level default if not specified.",
+    )
+    parser.add_argument(
+        "--spawn-angle",
+        type=float,
+        default=None,
+        help="Half-angle for spawn fan in degrees (e.g., 30=±30°). Uses level default if not specified.",
+    )
 
     args = parser.parse_args()
 
@@ -279,6 +308,8 @@ Examples:
             level=args.level,
             deterministic=not args.stochastic,
             render=args.render,
+            sprint_multiplier=args.sprint_multiplier,
+            spawn_angle_degrees=args.spawn_angle,
         )
 
         # Print summary
