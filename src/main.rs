@@ -48,6 +48,7 @@ fn main() {
             handle_level_change,
             update_ui,
             update_action_debug,
+            update_spawn_arc,
             handle_rl_commands,
             update_rl_state
         ))
@@ -193,11 +194,12 @@ fn setup_scene(
     ));
 
     // Spawn arc visualization (shows where projectiles spawn from in Level 2)
-    // Arc at spawn_distance=20, ±60° from +Y axis (120° total fan)
+    // Arc at spawn_distance=20, angle is dynamic based on config
     let spawn_radius = 20.0;
     let arc_height = 0.1;  // Slightly above ground
     let arc_segments = 30;  // Number of points along the arc
-    let half_angle = std::f32::consts::PI / 3.0;  // 60 degrees = π/3
+    // Use default angle for initial spawn - will be updated dynamically by update_spawn_arc system
+    let half_angle = std::f32::consts::PI / 3.0;  // 60 degrees default
 
     let arc_material = materials.add(StandardMaterial {
         base_color: Color::srgba(1.0, 0.3, 0.3, 0.8),  // Red-ish for danger zone
@@ -210,7 +212,7 @@ fn setup_scene(
     // Create arc segments
     for i in 0..arc_segments {
         let t = i as f32 / (arc_segments - 1) as f32;  // 0 to 1
-        let angle = -half_angle + t * 2.0 * half_angle;  // -60° to +60°
+        let angle = -half_angle + t * 2.0 * half_angle;
 
         let x = angle.sin() * spawn_radius;
         let y = angle.cos() * spawn_radius;
@@ -219,13 +221,13 @@ fn setup_scene(
             Mesh3d(meshes.add(Sphere::new(0.15))),
             MeshMaterial3d(arc_material.clone()),
             Transform::from_xyz(x, y, arc_height),
-            SpawnArcMarker,
+            SpawnArcMarker { index: i, is_edge: false },
         ));
     }
 
-    // Add edge markers (larger spheres at ±60°)
-    let edge_angles = [-half_angle, half_angle];
-    for angle in edge_angles {
+    // Add edge markers (larger spheres at arc boundaries)
+    for (edge_idx, sign) in [(0_usize, -1.0_f32), (1_usize, 1.0_f32)] {
+        let angle = sign * half_angle;
         let x = angle.sin() * spawn_radius;
         let y = angle.cos() * spawn_radius;
 
@@ -233,7 +235,7 @@ fn setup_scene(
             Mesh3d(meshes.add(Sphere::new(0.3))),
             MeshMaterial3d(arc_material.clone()),
             Transform::from_xyz(x, y, arc_height),
-            SpawnArcMarker,
+            SpawnArcMarker { index: arc_segments + edge_idx, is_edge: true },
         ));
     }
 
@@ -471,7 +473,12 @@ struct CameraDebugText;
 struct CoordinateAxis;
 
 #[derive(Component)]
-struct SpawnArcMarker;
+struct SpawnArcMarker {
+    /// Index of this marker in the arc (0..arc_segments for segment markers, arc_segments+ for edge markers)
+    index: usize,
+    /// Whether this is an edge marker (larger sphere at arc boundaries)
+    is_edge: bool,
+}
 
 #[derive(Component)]
 struct ActionDebugText;
@@ -908,6 +915,38 @@ fn handle_rl_commands(
                 info!("Game configuration updated via /configure endpoint");
             }
         }
+    }
+}
+
+/// Update spawn arc visualization to match current config
+fn update_spawn_arc(
+    config: Res<GameConfig>,
+    mut arc_query: Query<(&SpawnArcMarker, &mut Transform)>,
+) {
+    // Only update when config changes
+    if !config.is_changed() {
+        return;
+    }
+
+    let spawn_radius = 20.0;
+    let arc_height = 0.1;
+    let arc_segments = 30;
+    let half_angle = config.spawn_angle_degrees.to_radians();
+
+    for (marker, mut transform) in arc_query.iter_mut() {
+        let angle = if marker.is_edge {
+            // Edge markers: index 0 = left edge (-), index 1 = right edge (+)
+            let sign = if marker.index == arc_segments { -1.0 } else { 1.0 };
+            sign * half_angle
+        } else {
+            // Segment markers: evenly distributed along the arc
+            let t = marker.index as f32 / (arc_segments - 1) as f32;
+            -half_angle + t * 2.0 * half_angle
+        };
+
+        let x = angle.sin() * spawn_radius;
+        let y = angle.cos() * spawn_radius;
+        transform.translation = Vec3::new(x, y, arc_height);
     }
 }
 
