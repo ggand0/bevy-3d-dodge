@@ -167,36 +167,53 @@ def plot_learning_curves(log_path: Path, output_dir: Path) -> None:
     print("=" * 50)
 
 
-def train(config: TrainingConfig, config_name: Optional[str] = None, verbose: int = 1) -> None:
+def train(
+    config: TrainingConfig,
+    config_name: Optional[str] = None,
+    verbose: int = 1,
+    resume_path: Optional[str] = None,
+) -> None:
     """Train PPO agent on Bevy dodge game.
 
     Args:
         config: Config instance with all hyperparameters
         config_name: Name of config file (used for organizing results)
         verbose: Verbosity level
+        resume_path: Path to existing run directory to resume training from
     """
-    # Create timestamped run directory
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    # Determine config name for directory structure
-    if config_name:
-        config_basename = Path(config_name).stem
-        run_dir = Path("results") / config_basename / timestamp
+    # Handle resume vs new run
+    if resume_path:
+        run_dir = Path(resume_path)
+        if not run_dir.exists():
+            print(f"Error: Resume path not found: {resume_path}")
+            return
+        save_path = run_dir / "models"
+        log_path = run_dir / "logs"
+        print(f"Resuming training from: {run_dir}")
     else:
-        run_dir = Path("results") / "ppo_cli" / timestamp
+        # Create timestamped run directory
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # Create subdirectories for models and logs
-    save_path = run_dir / "models"
-    log_path = run_dir / "logs"
-    save_path.mkdir(parents=True, exist_ok=True)
-    log_path.mkdir(parents=True, exist_ok=True)
+        # Determine config name for directory structure
+        if config_name:
+            config_basename = Path(config_name).stem
+            run_dir = Path("results") / config_basename / timestamp
+        else:
+            run_dir = Path("results") / "ppo_cli" / timestamp
+
+        # Create subdirectories for models and logs
+        save_path = run_dir / "models"
+        log_path = run_dir / "logs"
+        save_path.mkdir(parents=True, exist_ok=True)
+        log_path.mkdir(parents=True, exist_ok=True)
 
     print("=" * 70)
     print("PPO Training - Bevy 3D Dodge Game")
     print("=" * 70)
     print(f"Run directory:       {run_dir}")
     print(f"Config:              {config_name if config_name else 'CLI arguments'}")
-    print(f"Timestamp:           {timestamp}")
+    if not resume_path:
+        print(f"Timestamp:           {timestamp}")
     print()
     print(f"Total timesteps:     {config.total_timesteps:,}")
     print(f"Learning rate:       {config.learning_rate}")
@@ -261,32 +278,53 @@ def train(config: TrainingConfig, config_name: Optional[str] = None, verbose: in
     # Create evaluation environment
     eval_env = DummyVecEnv([lambda: make_env(config.port)])
 
-    # Create PPO agent
-    print("Creating PPO agent...")
+    # Create or load PPO agent
+    if resume_path:
+        # Find the latest checkpoint or final model to resume from
+        checkpoint_dir = save_path / "checkpoints"
+        final_model = save_path / "final_model.zip"
 
-    # Build policy kwargs if custom network architecture is specified
-    policy_kwargs: Optional[Dict[str, Any]] = None
-    if config.net_arch is not None:
-        policy_kwargs = {"net_arch": config.net_arch}
+        model_to_load = None
+        if final_model.exists():
+            model_to_load = final_model
+        elif checkpoint_dir.exists():
+            checkpoints = sorted(checkpoint_dir.glob("ppo_dodge_*.zip"))
+            if checkpoints:
+                model_to_load = checkpoints[-1]
 
-    model = PPO(
-        policy="MlpPolicy",
-        env=env,
-        learning_rate=config.learning_rate,
-        n_steps=config.n_steps,
-        batch_size=config.batch_size,
-        n_epochs=config.n_epochs,
-        gamma=config.gamma,
-        gae_lambda=config.gae_lambda,
-        clip_range=config.clip_range,
-        ent_coef=config.ent_coef,
-        vf_coef=config.vf_coef,
-        max_grad_norm=config.max_grad_norm,
-        policy_kwargs=policy_kwargs,
-        tensorboard_log=str(log_path),
-        verbose=verbose,
-        device="auto",  # Will use CUDA/ROCm if available, otherwise CPU
-    )
+        if model_to_load is None:
+            print("Error: No model found to resume from")
+            return
+
+        print(f"Loading model from: {model_to_load}")
+        model = PPO.load(model_to_load, env=env, tensorboard_log=str(log_path))
+        print(f"✓ Model loaded successfully")
+    else:
+        print("Creating PPO agent...")
+
+        # Build policy kwargs if custom network architecture is specified
+        policy_kwargs: Optional[Dict[str, Any]] = None
+        if config.net_arch is not None:
+            policy_kwargs = {"net_arch": config.net_arch}
+
+        model = PPO(
+            policy="MlpPolicy",
+            env=env,
+            learning_rate=config.learning_rate,
+            n_steps=config.n_steps,
+            batch_size=config.batch_size,
+            n_epochs=config.n_epochs,
+            gamma=config.gamma,
+            gae_lambda=config.gae_lambda,
+            clip_range=config.clip_range,
+            ent_coef=config.ent_coef,
+            vf_coef=config.vf_coef,
+            max_grad_norm=config.max_grad_norm,
+            policy_kwargs=policy_kwargs,
+            tensorboard_log=str(log_path),
+            verbose=verbose,
+            device="auto",  # Will use CUDA/ROCm if available, otherwise CPU
+        )
 
     # Print model device
     import torch
@@ -318,13 +356,16 @@ def train(config: TrainingConfig, config_name: Optional[str] = None, verbose: in
 
     callbacks = [checkpoint_callback, eval_callback]
 
-    # Save config to run directory for reproducibility
-    config.to_yaml(str(run_dir / "config.yaml"))
-    print(f"✓ Config saved to {run_dir / 'config.yaml'}")
+    # Save config to run directory for reproducibility (only on new runs)
+    if not resume_path:
+        config.to_yaml(str(run_dir / "config.yaml"))
+        print(f"✓ Config saved to {run_dir / 'config.yaml'}")
 
     # Train
     print("\nStarting training...")
     print(f"Monitor with: tensorboard --logdir {log_path}")
+    if resume_path:
+        print("Note: Resuming from checkpoint, total_timesteps is ADDITIONAL steps to train")
     print()
 
     try:
@@ -332,6 +373,7 @@ def train(config: TrainingConfig, config_name: Optional[str] = None, verbose: in
             total_timesteps=config.total_timesteps,
             callback=callbacks,
             progress_bar=True,
+            reset_num_timesteps=not bool(resume_path),  # Don't reset step counter on resume
         )
     except KeyboardInterrupt:
         print("\n\nTraining interrupted by user")
@@ -369,6 +411,9 @@ Examples:
 
     # Override specific parameters:
     python train_ppo.py --config python/configs/ppo_baseline.yaml --steps 500000
+
+    # Resume training from a previous run:
+    python train_ppo.py --config python/configs/ppo_baseline.yaml --resume results/ppo_baseline/20251209_120000 --steps 500000
         """
     )
 
@@ -393,6 +438,12 @@ Examples:
         default=None,
         help="Port of Bevy API server (overrides config)",
     )
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default=None,
+        help="Path to existing run directory to resume training from",
+    )
 
     args = parser.parse_args()
 
@@ -413,7 +464,7 @@ Examples:
     if args.port is not None:
         config.port = args.port
 
-    train(config, config_name=config_name)
+    train(config, config_name=config_name, resume_path=args.resume)
 
 
 if __name__ == "__main__":
