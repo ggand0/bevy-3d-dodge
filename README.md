@@ -122,11 +122,28 @@ cargo run --release
 
 #### 1. Start the Game (API Server)
 
-The game automatically starts an HTTP API server on port 8000:
+The game automatically starts an HTTP API server on port 8000.
 
+**Windowed mode** (for visualization and debugging):
 ```bash
-VK_LOADER_DEBUG=error VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/radeon_icd.x86_64.json cargo run
+VK_LOADER_DEBUG=error VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/radeon_icd.x86_64.json cargo run --release
 ```
+
+**Headless mode** (for faster training, ~2x speedup):
+```bash
+cargo run --release -- --headless --port 8000 --fps 500
+```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--headless` | Run without window (no rendering) | off |
+| `--port <PORT>` | API server port | 8000 |
+| `--fps <FPS>` | Bevy tick rate cap in headless mode | 120 |
+
+**Performance notes:**
+- Headless mode achieves ~45 steps/sec vs ~23 steps/sec windowed (~2x speedup)
+- The `--fps` flag sets Bevy's maximum tick rate, but actual training speed is limited by HTTP round-trip latency between Python and Bevy
+- Setting `--fps 500` is reasonable; higher values won't improve training speed
 
 You should see:
 ```
