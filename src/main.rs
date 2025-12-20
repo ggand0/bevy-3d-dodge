@@ -922,7 +922,7 @@ fn handle_rl_commands(
                 // Increment step counter
                 env_state.episode_steps += 1;
             }
-            EnvCommand::Configure { level: level_num, action_space_type, sprint_multiplier, spawn_angle_degrees } => {
+            EnvCommand::Configure { level: level_num, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds } => {
                 // Update level if provided
                 if let Some(level_num) = level_num {
                     let new_level = match level_num {
@@ -971,6 +971,22 @@ fn handle_rl_commands(
                 if let Some(angle) = spawn_angle_degrees {
                     config.spawn_angle_degrees = angle;
                     info!("Spawn angle set to: ±{}° ({}° total fan)", angle, angle * 2.0);
+                }
+
+                // Update observation_mode if provided
+                if let Some(obs_mode_str) = observation_mode {
+                    if let Some(obs_mode) = config::ObservationMode::from_str(&obs_mode_str) {
+                        config.observation_mode = obs_mode;
+                        info!("Observation mode set to: {:?} ({}-dim)", obs_mode, obs_mode.observation_size());
+                    } else {
+                        warn!("Invalid observation mode: {}. Ignoring.", obs_mode_str);
+                    }
+                }
+
+                // Update thrower_delay_seconds if provided
+                if let Some(delay) = thrower_delay_seconds {
+                    config.thrower_delay_seconds = delay;
+                    info!("Thrower delay set to: {}s", delay);
                 }
 
                 // Sync shared config for API server
@@ -1044,14 +1060,22 @@ fn update_spawn_arc(
 fn update_rl_state(
     player_query: Query<(&Transform, &game::player::Velocity), With<game::player::Player>>,
     projectile_query: Query<(&Transform, &game::projectile::ProjectileVelocity), With<game::projectile::Projectile>>,
+    thrower_query: Query<&game::projectile::ThrowerIndicator>,
     player_transform_query: Query<&Transform, With<game::player::Player>>,
     projectile_transform_query: Query<&Transform, With<game::projectile::Projectile>>,
     game_state: Res<game::collision::GameState>,
     mut env_state: ResMut<RLEnvironmentState>,
     shared_state: Res<SharedEnvState>,
+    game_config: Res<GameConfig>,
 ) {
-    // Extract observation
-    let observation = rl::observation::extract_observation(&player_query, &projectile_query);
+    // Extract observation (with mode support)
+    let observation = rl::observation::extract_observation_with_mode(
+        game_config.observation_mode,
+        game_config.thrower_delay_seconds,
+        &player_query,
+        &projectile_query,
+        &thrower_query,
+    );
 
     // Calculate reward
     let reward = rl::environment::calculate_reward(&game_state, &player_transform_query, &projectile_transform_query);
@@ -1179,7 +1203,7 @@ fn handle_rl_commands_headless(
                 }
                 env_state.episode_steps += 1;
             }
-            EnvCommand::Configure { level: level_num, action_space_type, sprint_multiplier, spawn_angle_degrees } => {
+            EnvCommand::Configure { level: level_num, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds } => {
                 if let Some(level_num) = level_num {
                     let new_level = match level_num {
                         1 => Level::Level1,
@@ -1222,6 +1246,22 @@ fn handle_rl_commands_headless(
                 if let Some(angle) = spawn_angle_degrees {
                     config.spawn_angle_degrees = angle;
                     info!("Spawn angle set to: ±{}° ({}° total fan)", angle, angle * 2.0);
+                }
+
+                // Update observation_mode if provided
+                if let Some(obs_mode_str) = observation_mode {
+                    if let Some(obs_mode) = config::ObservationMode::from_str(&obs_mode_str) {
+                        config.observation_mode = obs_mode;
+                        info!("Observation mode set to: {:?} ({}-dim)", obs_mode, obs_mode.observation_size());
+                    } else {
+                        warn!("Invalid observation mode: {}. Ignoring.", obs_mode_str);
+                    }
+                }
+
+                // Update thrower_delay_seconds if provided
+                if let Some(delay) = thrower_delay_seconds {
+                    config.thrower_delay_seconds = delay;
+                    info!("Thrower delay set to: {}s", delay);
                 }
 
                 let mut shared = shared_config.0.blocking_lock();

@@ -95,6 +95,35 @@ impl Default for ActionSpaceType {
     }
 }
 
+/// Observation space modes for RL training
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ObservationMode {
+    #[default]
+    /// Standard 65-dim observation (backward compatible with existing models)
+    Standard,
+    /// Extended 69-dim observation with thrower indicator info
+    WithThrowerIndicator,
+}
+
+impl ObservationMode {
+    /// Parse from string (for API)
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "standard" | "default" => Some(Self::Standard),
+            "with_thrower" | "thrower" | "with_thrower_indicator" => Some(Self::WithThrowerIndicator),
+            _ => None,
+        }
+    }
+
+    /// Get observation size for this mode
+    pub fn observation_size(&self) -> usize {
+        match self {
+            Self::Standard => 65,
+            Self::WithThrowerIndicator => 69,
+        }
+    }
+}
+
 /// Game difficulty levels
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Resource)]
 pub enum Level {
@@ -147,6 +176,8 @@ pub struct GameConfig {
     pub action_space_type: ActionSpaceType,  // Discrete or Continuous action space
     pub sprint_multiplier: f32,  // Speed multiplier when sprinting (e.g., 1.0 = 2x speed, 2.0 = 3x speed)
     pub spawn_angle_degrees: f32,  // Half-angle for spawn fan in degrees (e.g., 60 = ±60° = 120° total)
+    pub observation_mode: ObservationMode,  // Standard (65-dim) or WithThrowerIndicator (69-dim)
+    pub thrower_delay_seconds: f32,  // Delay before thrower indicator spawns projectile
 }
 
 impl GameConfig {
@@ -173,6 +204,8 @@ impl GameConfig {
             action_space_type: ActionSpaceType::Continuous(ContinuousActionConfig::default()),
             sprint_multiplier: 2.0,  // Sprint gives 3.0x speed (5.0 -> 15.0)
             spawn_angle_degrees: 60.0,  // ±60° = 120° total fan (not used when random_spawn_position=false)
+            observation_mode: ObservationMode::default(),  // Standard 65-dim
+            thrower_delay_seconds: 1.0,  // 1 second warning before throw
         }
     }
 
@@ -190,6 +223,8 @@ impl GameConfig {
             action_space_type: ActionSpaceType::Continuous(ContinuousActionConfig::default()),
             sprint_multiplier: 2.0,  // Sprint gives 3.0x speed (5.0 -> 15.0)
             spawn_angle_degrees: 60.0,  // ±60° = 120° total fan
+            observation_mode: ObservationMode::default(),  // Standard 65-dim
+            thrower_delay_seconds: 1.0,  // 1 second warning before throw
         }
     }
 }
