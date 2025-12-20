@@ -122,6 +122,7 @@ fn run_windowed(
 }
 
 /// Resource to track if we're in headless mode
+#[allow(dead_code)]
 #[derive(Resource)]
 struct HeadlessMode(bool);
 
