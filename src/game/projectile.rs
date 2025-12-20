@@ -22,6 +22,16 @@ impl Plugin for ProjectilePlugin {
     }
 }
 
+/// Headless projectile plugin (no rendering)
+pub struct HeadlessProjectilePlugin;
+
+impl Plugin for HeadlessProjectilePlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(Startup, setup_projectile_timer)
+            .add_systems(Update, (spawn_projectiles_headless, move_projectiles, cleanup_projectiles));
+    }
+}
+
 fn setup_projectile_timer(mut commands: Commands, config: Res<GameConfig>) {
     commands.insert_resource(ProjectileSpawnTimer {
         timer: Timer::from_seconds(config.projectile_spawn_interval, TimerMode::Repeating),
@@ -95,6 +105,59 @@ fn spawn_projectiles(
                     reflectance: 0.45, // Good reflectance for rubber
                     ..default()
                 })),
+                Transform::from_xyz(spawn_x, spawn_y, spawn_z),
+                Projectile,
+                ProjectileVelocity(Vec3::new(vx, vy, vz)),
+            ));
+        }
+    }
+}
+
+/// Spawn projectiles without rendering components (for headless mode)
+fn spawn_projectiles_headless(
+    mut commands: Commands,
+    mut timer: ResMut<ProjectileSpawnTimer>,
+    time: Res<Time>,
+    config: Res<GameConfig>,
+    player_query: Query<&Transform, With<Player>>,
+) {
+    timer.timer.tick(time.delta());
+
+    if timer.timer.just_finished() {
+        if let Ok(player_transform) = player_query.get_single() {
+            let (spawn_x, spawn_y) = if config.random_spawn_position {
+                let half_angle_rad = config.spawn_angle_degrees.to_radians();
+                let angle = (rand::random::<f32>() - 0.5) * 2.0 * half_angle_rad;
+                let radius = config.projectile_spawn_distance;
+                let x = angle.sin() * radius;
+                let y = angle.cos() * radius;
+                (x, y)
+            } else {
+                let x = rand::random::<f32>() * 3.0 - 1.5;
+                let y = config.projectile_spawn_distance;
+                (x, y)
+            };
+
+            let (spawn_z, flight_time) = if config.random_spawn_position {
+                (1.5, 0.8)
+            } else {
+                (2.5, 2.0)
+            };
+
+            let target_x = player_transform.translation.x;
+            let target_y = player_transform.translation.y;
+            let target_z = config.player_start_height;
+
+            let dx = target_x - spawn_x;
+            let dy = target_y - spawn_y;
+            let dz = target_z - spawn_z;
+
+            let vx = dx / flight_time;
+            let vy = dy / flight_time;
+            let gravity = 9.8;
+            let vz = (dz + 0.5 * gravity * flight_time * flight_time) / flight_time;
+
+            commands.spawn((
                 Transform::from_xyz(spawn_x, spawn_y, spawn_z),
                 Projectile,
                 ProjectileVelocity(Vec3::new(vx, vy, vz)),

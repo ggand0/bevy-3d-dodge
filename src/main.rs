@@ -3,14 +3,35 @@ mod game;
 mod rl;
 
 use bevy::prelude::*;
+use bevy::app::ScheduleRunnerPlugin;
+use clap::Parser;
 use config::{GameConfig, Level, SharedGameConfig};
 use tokio::sync::mpsc;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
 use rl::api::{EnvCommand, SharedEnvState, start_api_server};
 use rl::environment::{RLEnvironmentState, ControlMode, TrainingMode};
 
+/// Bevy 3D Dodge - RL Training Game
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Run in headless mode (no window, for training)
+    #[arg(long, default_value_t = false)]
+    headless: bool,
+
+    /// API server port
+    #[arg(long, default_value_t = 8000)]
+    port: u16,
+
+    /// Target FPS for headless mode (ignored in windowed mode)
+    #[arg(long, default_value_t = 120)]
+    fps: u32,
+}
+
 fn main() {
+    let args = Args::parse();
     // Create channel for RL API commands
     let (command_tx, command_rx) = mpsc::unbounded_channel::<EnvCommand>();
 
@@ -21,9 +42,53 @@ fn main() {
     let game_config = Arc::new(Mutex::new(GameConfig::default()));
     let shared_config = SharedGameConfig(game_config.clone());
 
-    // Start HTTP API server on port 8000
-    start_api_server(8000, shared_state.clone(), command_tx, game_config);
+    // Start HTTP API server
+    start_api_server(args.port, shared_state.clone(), command_tx, game_config);
 
+    if args.headless {
+        info!("Starting in HEADLESS mode (port: {}, fps: {})", args.port, args.fps);
+        run_headless(args, command_rx, shared_state, shared_config);
+    } else {
+        info!("Starting in WINDOWED mode (port: {})", args.port);
+        run_windowed(command_rx, shared_state, shared_config);
+    }
+}
+
+/// Run the game in headless mode (no window, for training)
+fn run_headless(
+    args: Args,
+    command_rx: mpsc::UnboundedReceiver<EnvCommand>,
+    shared_state: SharedEnvState,
+    shared_config: SharedGameConfig,
+) {
+    let frame_duration = Duration::from_secs_f64(1.0 / args.fps as f64);
+
+    App::new()
+        .add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(frame_duration)))
+        .insert_resource(Level::default())
+        .insert_resource(GameConfig::default())
+        .insert_resource(RLEnvironmentState::default())
+        .insert_resource(ControlMode::default())
+        .insert_resource(TrainingMode::default())
+        .insert_non_send_resource(command_rx)
+        .insert_resource(shared_state)
+        .insert_resource(shared_config)
+        .insert_resource(HeadlessMode(true))
+        .add_plugins(game::HeadlessGamePlugin)
+        .add_systems(Startup, setup_headless)
+        .add_systems(Update, (
+            handle_rl_commands_headless,
+            update_rl_state,
+        ))
+        .run();
+}
+
+/// Run the game in windowed mode (normal GUI)
+fn run_windowed(
+    command_rx: mpsc::UnboundedReceiver<EnvCommand>,
+    shared_state: SharedEnvState,
+    shared_config: SharedGameConfig,
+) {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
@@ -41,6 +106,7 @@ fn main() {
         .insert_non_send_resource(command_rx)
         .insert_resource(shared_state)
         .insert_resource(shared_config)
+        .insert_resource(HeadlessMode(false))
         .add_plugins(game::GamePlugin)
         .add_systems(Startup, setup_scene)
         .add_systems(Update, (
@@ -53,6 +119,15 @@ fn main() {
             update_rl_state
         ))
         .run();
+}
+
+/// Resource to track if we're in headless mode
+#[derive(Resource)]
+struct HeadlessMode(bool);
+
+/// Minimal setup for headless mode (no rendering)
+fn setup_headless() {
+    info!("Headless mode initialized - API ready for RL training");
 }
 
 fn setup_scene(
@@ -996,4 +1071,180 @@ fn update_rl_state(
     *shared_state.done.blocking_lock() = done;
     *shared_state.truncated.blocking_lock() = truncated;
     *shared_state.info.blocking_lock() = info;
+}
+
+/// Handle RL API commands in headless mode (no materials/rendering)
+fn handle_rl_commands_headless(
+    mut command_rx: NonSendMut<mpsc::UnboundedReceiver<EnvCommand>>,
+    mut player_query: Query<(
+        &mut Transform,
+        &mut game::player::Velocity,
+        &mut game::player::PlayerTilt,
+        &mut game::player::VerticalVelocity,
+        &game::player::OnGround,
+    ), With<game::player::Player>>,
+    mut game_state: ResMut<game::collision::GameState>,
+    mut env_state: ResMut<RLEnvironmentState>,
+    mut control_mode: ResMut<ControlMode>,
+    mut training_mode: ResMut<TrainingMode>,
+    mut level: ResMut<Level>,
+    mut config: ResMut<GameConfig>,
+    shared_config: Res<config::SharedGameConfig>,
+    mut projectile_timer: ResMut<game::projectile::ProjectileSpawnTimer>,
+    projectile_query: Query<Entity, With<game::projectile::Projectile>>,
+    mut commands: Commands,
+) {
+    while let Ok(command) = command_rx.try_recv() {
+        match command {
+            EnvCommand::StartTraining => {
+                training_mode.enabled = true;
+                info!("Training mode ENABLED (headless)");
+            }
+            EnvCommand::EndTraining => {
+                training_mode.enabled = false;
+                *control_mode = ControlMode::Human;
+                info!("Training mode DISABLED (headless)");
+            }
+            EnvCommand::SetLevel { level: level_num } => {
+                let new_level = match level_num {
+                    1 => Level::Level1,
+                    2 => Level::Level2,
+                    _ => {
+                        warn!("Invalid level number: {}. Ignoring.", level_num);
+                        continue;
+                    }
+                };
+
+                *level = new_level;
+                *config = GameConfig::for_level(new_level);
+
+                let mut shared = shared_config.0.blocking_lock();
+                *shared = config.clone();
+
+                projectile_timer.timer.set_duration(std::time::Duration::from_secs_f32(config.projectile_spawn_interval));
+                projectile_timer.timer.reset();
+
+                game_state.is_game_over = false;
+                env_state.episode_steps = 0;
+                env_state.total_reward = 0.0;
+                env_state.last_reward = 0.0;
+
+                if let Ok((mut transform, mut velocity, mut tilt, mut v_vel, _on_ground)) = player_query.get_single_mut() {
+                    transform.translation = Vec3::new(0.0, 0.0, config.player_start_height);
+                    velocity.0 = Vec2::ZERO;
+                    tilt.pitch = 0.0;
+                    tilt.roll = 0.0;
+                    v_vel.0 = 0.0;
+                }
+
+                for entity in projectile_query.iter() {
+                    commands.entity(entity).despawn();
+                }
+
+                info!("Level set to: {}", new_level.name());
+            }
+            EnvCommand::Reset => {
+                *control_mode = ControlMode::RLAgent;
+                game_state.is_game_over = false;
+                env_state.episode_steps = 0;
+                env_state.total_reward = 0.0;
+                env_state.last_reward = 0.0;
+
+                if let Ok((mut transform, mut velocity, mut tilt, mut v_vel, _on_ground)) = player_query.get_single_mut() {
+                    transform.translation = Vec3::new(0.0, 0.0, config.player_start_height);
+                    velocity.0 = Vec2::ZERO;
+                    tilt.pitch = 0.0;
+                    tilt.roll = 0.0;
+                    v_vel.0 = 0.0;
+                }
+
+                for entity in projectile_query.iter() {
+                    commands.entity(entity).despawn();
+                }
+            }
+            EnvCommand::StepDiscrete { action } => {
+                if let Ok(rl_action) = rl::action::RLAction::from_index(action) {
+                    if let Ok((_, mut velocity, _, _, _)) = player_query.get_single_mut() {
+                        rl::action::apply_action(rl_action, &mut velocity, &config);
+                    }
+                }
+                env_state.episode_steps += 1;
+            }
+            EnvCommand::StepContinuous { action, config: cont_config } => {
+                if let Ok(continuous_action) = rl::action::ContinuousAction::from_array(&action, cont_config) {
+                    if let Ok((_, mut velocity, mut tilt, mut v_vel, on_ground)) = player_query.get_single_mut() {
+                        rl::action::apply_continuous_action(continuous_action, &mut velocity, &mut tilt, &mut v_vel, &on_ground, &config);
+                    }
+                }
+                env_state.episode_steps += 1;
+            }
+            EnvCommand::Configure { level: level_num, action_space_type, sprint_multiplier, spawn_angle_degrees } => {
+                if let Some(level_num) = level_num {
+                    let new_level = match level_num {
+                        1 => Level::Level1,
+                        2 => Level::Level2,
+                        _ => {
+                            warn!("Invalid level number: {}. Ignoring.", level_num);
+                            continue;
+                        }
+                    };
+
+                    *level = new_level;
+                    *config = GameConfig::for_level(new_level);
+
+                    projectile_timer.timer.set_duration(std::time::Duration::from_secs_f32(config.projectile_spawn_interval));
+                    projectile_timer.timer.reset();
+
+                    info!("Level set to: {}", new_level.name());
+                }
+
+                if let Some(action_space_str) = action_space_type {
+                    let action_space_lower = action_space_str.to_lowercase();
+                    let action_space = if action_space_lower == "discrete" {
+                        config::ActionSpaceType::Discrete
+                    } else if let Some(cont_config) = config::ContinuousActionConfig::from_str(&action_space_lower) {
+                        config::ActionSpaceType::Continuous(cont_config)
+                    } else {
+                        warn!("Invalid action space type: {}. Ignoring.", action_space_str);
+                        continue;
+                    };
+
+                    config.action_space_type = action_space;
+                    info!("Action space type set to: {:?}", action_space);
+                }
+
+                if let Some(mult) = sprint_multiplier {
+                    config.sprint_multiplier = mult;
+                    info!("Sprint multiplier set to: {} ({}x speed at full sprint)", mult, 1.0 + mult);
+                }
+
+                if let Some(angle) = spawn_angle_degrees {
+                    config.spawn_angle_degrees = angle;
+                    info!("Spawn angle set to: ±{}° ({}° total fan)", angle, angle * 2.0);
+                }
+
+                let mut shared = shared_config.0.blocking_lock();
+                *shared = config.clone();
+
+                game_state.is_game_over = false;
+                env_state.episode_steps = 0;
+                env_state.total_reward = 0.0;
+                env_state.last_reward = 0.0;
+
+                if let Ok((mut transform, mut velocity, mut tilt, mut v_vel, _on_ground)) = player_query.get_single_mut() {
+                    transform.translation = Vec3::new(0.0, 0.0, config.player_start_height);
+                    velocity.0 = Vec2::ZERO;
+                    tilt.pitch = 0.0;
+                    tilt.roll = 0.0;
+                    v_vel.0 = 0.0;
+                }
+
+                for entity in projectile_query.iter() {
+                    commands.entity(entity).despawn();
+                }
+
+                info!("Game configuration updated via /configure endpoint (headless)");
+            }
+        }
+    }
 }
