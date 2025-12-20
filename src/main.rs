@@ -48,6 +48,7 @@ fn main() {
             handle_level_change,
             update_ui,
             update_action_debug,
+            update_spawn_arc,
             handle_rl_commands,
             update_rl_state
         ))
@@ -192,6 +193,52 @@ fn setup_scene(
         Transform::from_xyz(zone_width / 2.0, 0.0, zone_line_height / 2.0),
     ));
 
+    // Spawn arc visualization (shows where projectiles spawn from in Level 2)
+    // Arc at spawn_distance=20, angle is dynamic based on config
+    let spawn_radius = 20.0;
+    let arc_height = 0.1;  // Slightly above ground
+    let arc_segments = 30;  // Number of points along the arc
+    // Use default angle for initial spawn - will be updated dynamically by update_spawn_arc system
+    let half_angle = std::f32::consts::PI / 3.0;  // 60 degrees default
+
+    let arc_material = materials.add(StandardMaterial {
+        base_color: Color::srgba(1.0, 0.3, 0.3, 0.8),  // Red-ish for danger zone
+        alpha_mode: AlphaMode::Blend,
+        emissive: Color::srgb(0.5, 0.1, 0.1).into(),
+        unlit: true,
+        ..default()
+    });
+
+    // Create arc segments
+    for i in 0..arc_segments {
+        let t = i as f32 / (arc_segments - 1) as f32;  // 0 to 1
+        let angle = -half_angle + t * 2.0 * half_angle;
+
+        let x = angle.sin() * spawn_radius;
+        let y = angle.cos() * spawn_radius;
+
+        commands.spawn((
+            Mesh3d(meshes.add(Sphere::new(0.15))),
+            MeshMaterial3d(arc_material.clone()),
+            Transform::from_xyz(x, y, arc_height),
+            SpawnArcMarker { index: i, is_edge: false },
+        ));
+    }
+
+    // Add edge markers (larger spheres at arc boundaries)
+    for (edge_idx, sign) in [(0_usize, -1.0_f32), (1_usize, 1.0_f32)] {
+        let angle = sign * half_angle;
+        let x = angle.sin() * spawn_radius;
+        let y = angle.cos() * spawn_radius;
+
+        commands.spawn((
+            Mesh3d(meshes.add(Sphere::new(0.3))),
+            MeshMaterial3d(arc_material.clone()),
+            Transform::from_xyz(x, y, arc_height),
+            SpawnArcMarker { index: arc_segments + edge_idx, is_edge: true },
+        ));
+    }
+
     // Coordinate axes visualization (hidden by default, shown in debug mode)
     let axis_length = 5.0;
     let axis_thickness = 0.1;
@@ -282,7 +329,7 @@ fn setup_scene(
 
     // UI Text - Controls
     commands.spawn((
-        Text::new("WASD: Move | Space: Jump | R: Reset | L: Change Level | F1: Free Cam | F2: Toggle Axes | ESC: Quit"),
+        Text::new("WASD: Move | Shift: Sprint | Space: Jump | R: Reset | L: Level | F1: Free Cam | ESC: Quit"),
         TextFont {
             font_size: 20.0,
             ..default()
@@ -294,6 +341,7 @@ fn setup_scene(
             left: Val::Px(10.0),
             ..default()
         },
+        ControlsText,
     ));
 
     // Level indicator (top right, below control legend)
@@ -414,6 +462,9 @@ struct GameOverText;
 struct TrainingModeText;
 
 #[derive(Component)]
+struct ControlsText;
+
+#[derive(Component)]
 struct LevelText;
 
 #[derive(Component)]
@@ -426,6 +477,14 @@ struct CameraDebugText;
 struct CoordinateAxis;
 
 #[derive(Component)]
+struct SpawnArcMarker {
+    /// Index of this marker in the arc (0..arc_segments for segment markers, arc_segments+ for edge markers)
+    index: usize,
+    /// Whether this is an edge marker (larger sphere at arc boundaries)
+    is_edge: bool,
+}
+
+#[derive(Component)]
 struct ActionDebugText;
 
 fn update_ui(
@@ -435,11 +494,12 @@ fn update_ui(
     training_mode: Res<TrainingMode>,
     level: Res<Level>,
     config: Res<config::GameConfig>,
-    mut game_over_query: Query<&mut Node, (With<GameOverText>, Without<CameraDebugText>, Without<TrainingModeText>, Without<LevelText>, Without<ConfigInfoText>, Without<ActionDebugText>)>,
-    mut training_text_query: Query<&mut Node, (With<TrainingModeText>, Without<CameraDebugText>, Without<GameOverText>, Without<LevelText>, Without<ConfigInfoText>, Without<ActionDebugText>)>,
+    mut game_over_query: Query<&mut Node, (With<GameOverText>, Without<CameraDebugText>, Without<TrainingModeText>, Without<ControlsText>, Without<LevelText>, Without<ConfigInfoText>, Without<ActionDebugText>)>,
+    mut training_text_query: Query<&mut Node, (With<TrainingModeText>, Without<CameraDebugText>, Without<GameOverText>, Without<ControlsText>, Without<LevelText>, Without<ConfigInfoText>, Without<ActionDebugText>)>,
+    mut controls_text_query: Query<&mut Node, (With<ControlsText>, Without<CameraDebugText>, Without<GameOverText>, Without<TrainingModeText>, Without<LevelText>, Without<ConfigInfoText>, Without<ActionDebugText>)>,
     mut level_text_query: Query<&mut Text, (With<LevelText>, Without<ConfigInfoText>)>,
     mut config_info_query: Query<&mut Text, (With<ConfigInfoText>, Without<LevelText>)>,
-    mut debug_text_query: Query<&mut Node, (With<CameraDebugText>, Without<GameOverText>, Without<TrainingModeText>, Without<LevelText>, Without<ConfigInfoText>, Without<ActionDebugText>)>,
+    mut debug_text_query: Query<&mut Node, (With<CameraDebugText>, Without<GameOverText>, Without<TrainingModeText>, Without<ControlsText>, Without<LevelText>, Without<ConfigInfoText>, Without<ActionDebugText>)>,
     mut action_debug_query: Query<&mut Node, With<ActionDebugText>>,
     mut axis_query: Query<&mut Visibility, With<CoordinateAxis>>,
 ) {
@@ -457,6 +517,15 @@ fn update_ui(
             Display::Flex
         } else {
             Display::None
+        };
+    }
+
+    // Controls text is hidden during training mode
+    if let Ok(mut node) = controls_text_query.get_single_mut() {
+        node.display = if training_mode.enabled {
+            Display::None
+        } else {
+            Display::Flex
         };
     }
 
@@ -777,7 +846,7 @@ fn handle_rl_commands(
                 // Increment step counter
                 env_state.episode_steps += 1;
             }
-            EnvCommand::Configure { level: level_num, action_space_type } => {
+            EnvCommand::Configure { level: level_num, action_space_type, sprint_multiplier, spawn_angle_degrees } => {
                 // Update level if provided
                 if let Some(level_num) = level_num {
                     let new_level = match level_num {
@@ -816,6 +885,18 @@ fn handle_rl_commands(
                     info!("Action space type set to: {:?}", action_space);
                 }
 
+                // Update sprint_multiplier if provided
+                if let Some(mult) = sprint_multiplier {
+                    config.sprint_multiplier = mult;
+                    info!("Sprint multiplier set to: {} ({}x speed at full sprint)", mult, 1.0 + mult);
+                }
+
+                // Update spawn_angle_degrees if provided
+                if let Some(angle) = spawn_angle_degrees {
+                    config.spawn_angle_degrees = angle;
+                    info!("Spawn angle set to: ±{}° ({}° total fan)", angle, angle * 2.0);
+                }
+
                 // Sync shared config for API server
                 let mut shared = shared_config.0.blocking_lock();
                 *shared = config.clone();
@@ -848,6 +929,38 @@ fn handle_rl_commands(
                 info!("Game configuration updated via /configure endpoint");
             }
         }
+    }
+}
+
+/// Update spawn arc visualization to match current config
+fn update_spawn_arc(
+    config: Res<GameConfig>,
+    mut arc_query: Query<(&SpawnArcMarker, &mut Transform)>,
+) {
+    // Only update when config changes
+    if !config.is_changed() {
+        return;
+    }
+
+    let spawn_radius = 20.0;
+    let arc_height = 0.1;
+    let arc_segments = 30;
+    let half_angle = config.spawn_angle_degrees.to_radians();
+
+    for (marker, mut transform) in arc_query.iter_mut() {
+        let angle = if marker.is_edge {
+            // Edge markers: index 0 = left edge (-), index 1 = right edge (+)
+            let sign = if marker.index == arc_segments { -1.0 } else { 1.0 };
+            sign * half_angle
+        } else {
+            // Segment markers: evenly distributed along the arc
+            let t = marker.index as f32 / (arc_segments - 1) as f32;
+            -half_angle + t * 2.0 * half_angle
+        };
+
+        let x = angle.sin() * spawn_radius;
+        let y = angle.cos() * spawn_radius;
+        transform.translation = Vec3::new(x, y, arc_height);
     }
 }
 

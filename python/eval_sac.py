@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Evaluate trained PPO model on Bevy dodge game.
+"""Evaluate trained SAC model on Bevy dodge game.
 
 Usage:
-    python eval_ppo.py <model_path> [--episodes 20] [--render]
+    python eval_sac.py <model_path> [--episodes 20] [--render]
 """
 
 import argparse
@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 import numpy as np
-from stable_baselines3 import PPO
+from stable_baselines3 import SAC
 
 from bevy_dodge_env import BevyDodgeEnv
 
@@ -26,7 +26,7 @@ def evaluate_agent(
     sprint_multiplier: float = None,
     spawn_angle_degrees: float = None,
 ):
-    """Evaluate trained PPO agent.
+    """Evaluate trained SAC agent.
 
     Args:
         model_path: Path to saved model
@@ -42,7 +42,7 @@ def evaluate_agent(
     """
     # Load model
     print(f"Loading model from {model_path}...")
-    model = PPO.load(model_path)
+    model = SAC.load(model_path)
     print(f"✓ Model loaded (policy: {model.policy.__class__.__name__})")
 
     # Detect action space configuration from model
@@ -220,15 +220,15 @@ def print_summary(stats: dict):
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Evaluate trained PPO model",
+        description="Evaluate trained SAC model",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
     # Evaluate best model with 20 episodes:
-    python eval_ppo.py results/ppo_baseline/20251117_213229/models/best/best_model.zip --episodes 20
+    python eval_sac.py results/sac_baseline/20251117_213229/models/best/best_model.zip --episodes 20
 
     # Quick test with 5 episodes:
-    python eval_ppo.py results/ppo_baseline/20251117_213229/models/final_model.zip --episodes 5
+    python eval_sac.py results/sac_baseline/20251117_213229/models/final_model.zip --episodes 5
         """
     )
 
@@ -295,7 +295,7 @@ Examples:
 
     # Print header
     print("=" * 70)
-    print("PPO Agent Evaluation - Bevy 3D Dodge Game")
+    print("SAC Agent Evaluation - Bevy 3D Dodge Game")
     print("=" * 70)
     print(f"Model: {args.model_path}")
     print(f"Episodes: {args.episodes}")

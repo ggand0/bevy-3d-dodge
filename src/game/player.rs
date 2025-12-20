@@ -96,7 +96,17 @@ fn player_movement(
         // Normalize direction and apply to velocity
         if direction.length() > 0.0 {
             direction = direction.normalize();
-            velocity.0 = direction * config.player_speed;
+
+            // Sprint with Shift key
+            let sprint = if keyboard_input.pressed(KeyCode::ShiftLeft) || keyboard_input.pressed(KeyCode::ShiftRight) {
+                1.0
+            } else {
+                0.0
+            };
+            let speed_multiplier = 1.0 + sprint * config.sprint_multiplier;
+            let effective_speed = config.player_speed * speed_multiplier;
+
+            velocity.0 = direction * effective_speed;
         } else {
             // No keys pressed - stop the player
             velocity.0 = Vec2::ZERO;

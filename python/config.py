@@ -49,7 +49,9 @@ class TrainingConfig:
     port: int = 8000
     max_episode_steps: int = 1000
     level: int = 1  # Difficulty level (1 for baseline, 2 for hard)
-    action_space_type: str = "discrete"  # Action space type ("discrete" or "continuous")
+    action_space_type: str = "discrete"  # Action space type ("discrete", "basic_3d", etc.)
+    sprint_multiplier: Optional[float] = None  # Sprint speed multiplier (e.g., 2.0 = 3x speed). None = use level default
+    spawn_angle_degrees: Optional[float] = None  # Half-angle for spawn fan (e.g., 30 = ±30°). None = use level default
 
     # Paths
     save_dir: str = "models"

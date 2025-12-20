@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""Train PPO agent on Bevy 3D dodge game.
+"""Train SAC agent on Bevy 3D dodge game.
+
+SAC (Soft Actor-Critic) is an off-policy algorithm that:
+- Uses a replay buffer for sample efficiency
+- Has automatic entropy tuning for exploration
+- Works well with continuous action spaces
 
 Usage:
-    python train_ppo.py --config python/configs/ppo_baseline.yaml
+    python train_sac.py --config python/configs/sac_level2_basic3d.yaml
 """
 
 import argparse
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
@@ -14,7 +18,7 @@ from typing import Optional, Dict, Any, List, Tuple
 import gymnasium as gym
 import matplotlib.pyplot as plt
 import numpy as np
-from stable_baselines3 import PPO
+from stable_baselines3 import SAC
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
@@ -32,15 +36,8 @@ def make_env(port: int) -> gym.Env:
 
 
 def load_tensorboard_data(logdir: Path) -> Dict[str, List[Tuple[int, float]]]:
-    """Load data from TensorBoard event files.
-
-    Args:
-        logdir: Directory containing TensorBoard logs
-
-    Returns:
-        Dictionary mapping metric names to list of (step, value) tuples
-    """
-    run_dirs = sorted(logdir.glob("PPO_*"))
+    """Load data from TensorBoard event files."""
+    run_dirs = sorted(logdir.glob("SAC_*"))
     if not run_dirs:
         return {}
 
@@ -57,12 +54,7 @@ def load_tensorboard_data(logdir: Path) -> Dict[str, List[Tuple[int, float]]]:
 
 
 def plot_learning_curves(log_path: Path, output_dir: Path) -> None:
-    """Plot learning curves after training completes.
-
-    Args:
-        log_path: Directory containing TensorBoard logs
-        output_dir: Directory to save plots
-    """
+    """Plot learning curves after training completes."""
     print("\nGenerating learning curves...")
 
     data = load_tensorboard_data(log_path)
@@ -138,7 +130,7 @@ def plot_learning_curves(log_path: Path, output_dir: Path) -> None:
         axes[1, 1].text(0.5, 0.5, 'No eval data', ha='center', va='center', transform=axes[1, 1].transAxes)
         axes[1, 1].set_title('Evaluation Episode Length', fontsize=12, fontweight='bold')
 
-    plt.suptitle('PPO Training - Learning Curves', fontsize=14, fontweight='bold', y=0.995)
+    plt.suptitle('SAC Training - Learning Curves', fontsize=14, fontweight='bold', y=0.995)
     plt.tight_layout()
     plt.savefig(plots_dir / 'learning_curves.png', dpi=150)
     print(f"✓ Saved: {plots_dir / 'learning_curves.png'}")
@@ -173,7 +165,7 @@ def train(
     verbose: int = 1,
     resume_path: Optional[str] = None,
 ) -> None:
-    """Train PPO agent on Bevy dodge game.
+    """Train SAC agent on Bevy dodge game.
 
     Args:
         config: Config instance with all hyperparameters
@@ -199,7 +191,7 @@ def train(
             config_basename = Path(config_name).stem
             run_dir = Path("results") / config_basename / timestamp
         else:
-            run_dir = Path("results") / "ppo_cli" / timestamp
+            run_dir = Path("results") / "sac_cli" / timestamp
 
         # Create subdirectories for models and logs
         save_path = run_dir / "models"
@@ -207,8 +199,17 @@ def train(
         save_path.mkdir(parents=True, exist_ok=True)
         log_path.mkdir(parents=True, exist_ok=True)
 
+    # Get SAC-specific parameters with defaults
+    buffer_size = getattr(config, 'buffer_size', 1_000_000)
+    learning_starts = getattr(config, 'learning_starts', 10000)
+    batch_size = getattr(config, 'batch_size', 256)
+    tau = getattr(config, 'tau', 0.005)
+    train_freq = getattr(config, 'train_freq', 1)
+    gradient_steps = getattr(config, 'gradient_steps', 1)
+    ent_coef = getattr(config, 'ent_coef', 'auto')  # SAC's automatic entropy tuning
+
     print("=" * 70)
-    print("PPO Training - Bevy 3D Dodge Game")
+    print("SAC Training - Bevy 3D Dodge Game")
     print("=" * 70)
     print(f"Run directory:       {run_dir}")
     print(f"Config:              {config_name if config_name else 'CLI arguments'}")
@@ -217,13 +218,15 @@ def train(
     print()
     print(f"Total timesteps:     {config.total_timesteps:,}")
     print(f"Learning rate:       {config.learning_rate}")
-    print(f"Batch size:          {config.batch_size}")
-    print(f"N steps:             {config.n_steps}")
-    print(f"N epochs:            {config.n_epochs}")
+    print(f"Buffer size:         {buffer_size:,}")
+    print(f"Learning starts:     {learning_starts:,}")
+    print(f"Batch size:          {batch_size}")
+    print(f"Tau (soft update):   {tau}")
+    print(f"Train freq:          {train_freq}")
+    print(f"Gradient steps:      {gradient_steps}")
+    print(f"Entropy coef:        {ent_coef}")
     print(f"Gamma:               {config.gamma}")
-    print(f"GAE lambda:          {config.gae_lambda}")
-    print(f"Clip range:          {config.clip_range}")
-    print(f"Network arch:        {config.net_arch if config.net_arch else '[64, 64] (default)'}")
+    print(f"Network arch:        {config.net_arch if config.net_arch else '[256, 256] (default)'}")
     print(f"Difficulty level:    {config.level} ({'Baseline' if config.level == 1 else 'Hard'})")
     print()
     print(f"Models saved to:     {save_path}")
@@ -236,7 +239,7 @@ def train(
 
     # Configure game settings (level, action space, and optional params)
     level_name = "Level 1 (Baseline)" if config.level == 1 else "Level 2 (Hard)"
-    action_space_type = getattr(config, 'action_space_type', 'discrete')
+    action_space_type = getattr(config, 'action_space_type', 'basic_3d')  # SAC needs continuous
     sprint_multiplier = getattr(config, 'sprint_multiplier', None)
     spawn_angle_degrees = getattr(config, 'spawn_angle_degrees', None)
 
@@ -256,12 +259,11 @@ def train(
     print(f"✓ Game configured: {', '.join(config_parts)}")
 
     # Reset to ensure config is fully applied and synced to API server's shared state
-    # This ensures the next environment creation will query the correct action space
     temp_env.reset()
     del temp_env  # Close temporary environment
     print()
 
-    # Now create the actual training environment (will query the updated action space)
+    # Now create the actual training environment
     print("Creating training environment with configured action space...")
     env = DummyVecEnv([lambda: make_env(config.port)])
     print(f"✓ Environment created")
@@ -278,7 +280,7 @@ def train(
     # Create evaluation environment
     eval_env = DummyVecEnv([lambda: make_env(config.port)])
 
-    # Create or load PPO agent
+    # Create or load SAC agent
     if resume_path:
         # Find the latest checkpoint or final model to resume from
         checkpoint_dir = save_path / "checkpoints"
@@ -288,7 +290,7 @@ def train(
         if final_model.exists():
             model_to_load = final_model
         elif checkpoint_dir.exists():
-            checkpoints = sorted(checkpoint_dir.glob("ppo_dodge_*.zip"))
+            checkpoints = sorted(checkpoint_dir.glob("sac_dodge_*.zip"))
             if checkpoints:
                 model_to_load = checkpoints[-1]
 
@@ -297,33 +299,32 @@ def train(
             return
 
         print(f"Loading model from: {model_to_load}")
-        model = PPO.load(model_to_load, env=env, tensorboard_log=str(log_path))
+        model = SAC.load(model_to_load, env=env, tensorboard_log=str(log_path))
         print(f"✓ Model loaded successfully")
     else:
-        print("Creating PPO agent...")
+        print("Creating SAC agent...")
 
         # Build policy kwargs if custom network architecture is specified
         policy_kwargs: Optional[Dict[str, Any]] = None
         if config.net_arch is not None:
             policy_kwargs = {"net_arch": config.net_arch}
 
-        model = PPO(
+        model = SAC(
             policy="MlpPolicy",
             env=env,
             learning_rate=config.learning_rate,
-            n_steps=config.n_steps,
-            batch_size=config.batch_size,
-            n_epochs=config.n_epochs,
+            buffer_size=buffer_size,
+            learning_starts=learning_starts,
+            batch_size=batch_size,
+            tau=tau,
             gamma=config.gamma,
-            gae_lambda=config.gae_lambda,
-            clip_range=config.clip_range,
-            ent_coef=config.ent_coef,
-            vf_coef=config.vf_coef,
-            max_grad_norm=config.max_grad_norm,
+            train_freq=train_freq,
+            gradient_steps=gradient_steps,
+            ent_coef=ent_coef,
             policy_kwargs=policy_kwargs,
             tensorboard_log=str(log_path),
             verbose=verbose,
-            device="auto",  # Will use CUDA/ROCm if available, otherwise CPU
+            device="auto",
         )
 
     # Print model device
@@ -339,8 +340,8 @@ def train(
     checkpoint_callback = CheckpointCallback(
         save_freq=config.save_freq,
         save_path=str(save_path / "checkpoints"),
-        name_prefix="ppo_dodge",
-        save_replay_buffer=False,  # PPO doesn't use replay buffer
+        name_prefix="sac_dodge",
+        save_replay_buffer=True,  # SAC uses replay buffer - save it for resume
         save_vecnormalize=True,
     )
 
@@ -373,7 +374,7 @@ def train(
             total_timesteps=config.total_timesteps,
             callback=callbacks,
             progress_bar=True,
-            reset_num_timesteps=not bool(resume_path),  # Don't reset step counter on resume
+            reset_num_timesteps=not bool(resume_path),
         )
     except KeyboardInterrupt:
         print("\n\nTraining interrupted by user")
@@ -402,18 +403,18 @@ def train(
 def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Train PPO agent on Bevy dodge game",
+        description="Train SAC agent on Bevy dodge game",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
     # Using YAML config (recommended):
-    python train_ppo.py --config python/configs/ppo_baseline.yaml
+    python train_sac.py --config python/configs/sac_level2_basic3d.yaml
 
     # Override specific parameters:
-    python train_ppo.py --config python/configs/ppo_baseline.yaml --steps 500000
+    python train_sac.py --config python/configs/sac_level2_basic3d.yaml --steps 500000
 
     # Resume training from a previous run:
-    python train_ppo.py --config python/configs/ppo_baseline.yaml --resume results/ppo_baseline/20251209_120000 --steps 500000
+    python train_sac.py --config python/configs/sac_level2_basic3d.yaml --resume results/sac_level2_basic3d/20251209_120000 --steps 500000
         """
     )
 
@@ -455,7 +456,7 @@ Examples:
         config_name = args.config
     else:
         print("Error: --config is required")
-        print("Example: python train_ppo.py --config python/configs/ppo_baseline.yaml")
+        print("Example: python train_sac.py --config python/configs/sac_level2_basic3d.yaml")
         return
 
     # Override config with CLI arguments if provided
