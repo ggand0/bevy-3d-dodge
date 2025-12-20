@@ -28,6 +28,7 @@ pub struct RLEnvironmentState {
 }
 
 /// Information returned with each step
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StepInfo {
     pub episode_steps: u32,
@@ -71,7 +72,7 @@ pub fn calculate_reward(
 }
 
 /// Check if episode should terminate
-pub fn is_episode_done(game_state: &GameState, env_state: &RLEnvironmentState) -> bool {
+pub fn is_episode_done(game_state: &GameState, _env_state: &RLEnvironmentState) -> bool {
     // Done if game over (collision or out of bounds)
     if game_state.is_game_over {
         return true;

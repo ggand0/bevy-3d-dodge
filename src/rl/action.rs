@@ -120,6 +120,7 @@ impl ContinuousAction {
 }
 
 /// Unified action enum that can hold either discrete or continuous actions
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Action {
     Discrete(RLAction),

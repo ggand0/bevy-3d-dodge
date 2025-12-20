@@ -30,6 +30,17 @@ impl Plugin for PlayerPlugin {
     }
 }
 
+/// Headless player plugin (no rendering)
+pub struct HeadlessPlayerPlugin;
+
+impl Plugin for HeadlessPlayerPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(Startup, spawn_player_headless)
+            .add_systems(Update, (apply_velocity, apply_tilt, apply_gravity));
+        // Note: player_movement and player_jump are skipped in headless (no keyboard input)
+    }
+}
+
 fn spawn_player(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -45,6 +56,22 @@ fn spawn_player(
             reflectance: 0.4, // Slight reflectance for synthetic fabric
             ..default()
         })),
+        Transform::from_xyz(0.0, 0.0, config.player_start_height)
+            .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+        Player,
+        Velocity(Vec2::ZERO),
+        VerticalVelocity(0.0),
+        OnGround(true),
+        PlayerTilt { pitch: 0.0, roll: 0.0 },
+    ));
+}
+
+/// Spawn player without rendering components (for headless mode)
+fn spawn_player_headless(
+    mut commands: Commands,
+    config: Res<GameConfig>,
+) {
+    commands.spawn((
         Transform::from_xyz(0.0, 0.0, config.player_start_height)
             .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
         Player,

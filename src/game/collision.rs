@@ -20,6 +20,17 @@ impl Plugin for CollisionPlugin {
     }
 }
 
+/// Headless collision plugin (no rendering)
+pub struct HeadlessCollisionPlugin;
+
+impl Plugin for HeadlessCollisionPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_event::<CollisionEvent>()
+            .init_resource::<GameState>()
+            .add_systems(Update, (detect_collisions, check_out_of_bounds, handle_collisions_headless));
+    }
+}
+
 fn detect_collisions(
     player_query: Query<&Transform, With<Player>>,
     projectile_query: Query<&Transform, With<Projectile>>,
@@ -91,6 +102,19 @@ fn handle_collisions(
                 }
             }
 
+            info!("Game Over!");
+        }
+    }
+}
+
+/// Handle collisions without rendering updates (for headless mode)
+fn handle_collisions_headless(
+    mut collision_events: EventReader<CollisionEvent>,
+    mut game_state: ResMut<GameState>,
+) {
+    for _ in collision_events.read() {
+        if !game_state.is_game_over {
+            game_state.is_game_over = true;
             info!("Game Over!");
         }
     }

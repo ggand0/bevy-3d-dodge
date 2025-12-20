@@ -63,6 +63,7 @@ impl ContinuousActionConfig {
     }
 
     /// Convert to string for API
+    #[allow(dead_code)]
     pub fn to_string(&self) -> &'static str {
         match self {
             Self::Basic3D => "basic_3d",
@@ -111,6 +112,7 @@ impl Level {
     }
 
     /// Get level number for display
+    #[allow(dead_code)]
     pub fn number(self) -> u8 {
         match self {
             Level::Level1 => 1,
@@ -198,6 +200,7 @@ impl Default for GameConfig {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, Resource)]
 pub struct ApiConfig {
     pub host: String,
