@@ -1,3 +1,7 @@
+CLAUDE.md
+resources/
+**/*.rar
+**/test_*
 outputs/
 /assets/**/*.zip
 /assets/textures/Standard-Cube-Map*
