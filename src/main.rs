@@ -341,6 +341,7 @@ fn setup_scene(
             left: Val::Px(10.0),
             ..default()
         },
+        ControlsText,
     ));
 
     // Level indicator (top right, below control legend)
@@ -461,6 +462,9 @@ struct GameOverText;
 struct TrainingModeText;
 
 #[derive(Component)]
+struct ControlsText;
+
+#[derive(Component)]
 struct LevelText;
 
 #[derive(Component)]
@@ -490,11 +494,12 @@ fn update_ui(
     training_mode: Res<TrainingMode>,
     level: Res<Level>,
     config: Res<config::GameConfig>,
-    mut game_over_query: Query<&mut Node, (With<GameOverText>, Without<CameraDebugText>, Without<TrainingModeText>, Without<LevelText>, Without<ConfigInfoText>, Without<ActionDebugText>)>,
-    mut training_text_query: Query<&mut Node, (With<TrainingModeText>, Without<CameraDebugText>, Without<GameOverText>, Without<LevelText>, Without<ConfigInfoText>, Without<ActionDebugText>)>,
+    mut game_over_query: Query<&mut Node, (With<GameOverText>, Without<CameraDebugText>, Without<TrainingModeText>, Without<ControlsText>, Without<LevelText>, Without<ConfigInfoText>, Without<ActionDebugText>)>,
+    mut training_text_query: Query<&mut Node, (With<TrainingModeText>, Without<CameraDebugText>, Without<GameOverText>, Without<ControlsText>, Without<LevelText>, Without<ConfigInfoText>, Without<ActionDebugText>)>,
+    mut controls_text_query: Query<&mut Node, (With<ControlsText>, Without<CameraDebugText>, Without<GameOverText>, Without<TrainingModeText>, Without<LevelText>, Without<ConfigInfoText>, Without<ActionDebugText>)>,
     mut level_text_query: Query<&mut Text, (With<LevelText>, Without<ConfigInfoText>)>,
     mut config_info_query: Query<&mut Text, (With<ConfigInfoText>, Without<LevelText>)>,
-    mut debug_text_query: Query<&mut Node, (With<CameraDebugText>, Without<GameOverText>, Without<TrainingModeText>, Without<LevelText>, Without<ConfigInfoText>, Without<ActionDebugText>)>,
+    mut debug_text_query: Query<&mut Node, (With<CameraDebugText>, Without<GameOverText>, Without<TrainingModeText>, Without<ControlsText>, Without<LevelText>, Without<ConfigInfoText>, Without<ActionDebugText>)>,
     mut action_debug_query: Query<&mut Node, With<ActionDebugText>>,
     mut axis_query: Query<&mut Visibility, With<CoordinateAxis>>,
 ) {
@@ -512,6 +517,15 @@ fn update_ui(
             Display::Flex
         } else {
             Display::None
+        };
+    }
+
+    // Controls text is hidden during training mode
+    if let Ok(mut node) = controls_text_query.get_single_mut() {
+        node.display = if training_mode.enabled {
+            Display::None
+        } else {
+            Display::Flex
         };
     }
 

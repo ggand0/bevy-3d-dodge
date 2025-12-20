@@ -106,6 +106,11 @@ def evaluate_agent(
     print(f"  Action space: {env.action_space}")
     print()
 
+    # Enable training mode to hide controls and prevent keyboard interruptions
+    env.start_training()
+    print("✓ Training mode enabled - controls hidden, R key disabled")
+    print()
+
     # Run evaluation episodes
     episode_rewards = []
     episode_lengths = []
