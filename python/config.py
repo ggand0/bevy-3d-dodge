@@ -52,6 +52,8 @@ class TrainingConfig:
     action_space_type: str = "discrete"  # Action space type ("discrete", "basic_3d", etc.)
     sprint_multiplier: Optional[float] = None  # Sprint speed multiplier (e.g., 2.0 = 3x speed). None = use level default
     spawn_angle_degrees: Optional[float] = None  # Half-angle for spawn fan (e.g., 30 = ±30°). None = use level default
+    observation_mode: Optional[str] = None  # "standard" (65-dim) or "with_thrower" (69-dim). None = use level default
+    thrower_delay_seconds: Optional[float] = None  # Delay before thrower spawns projectile. None = use level default
 
     # Paths
     save_dir: str = "models"

@@ -242,12 +242,18 @@ def train(
     action_space_type = getattr(config, 'action_space_type', 'basic_3d')  # SAC needs continuous
     sprint_multiplier = getattr(config, 'sprint_multiplier', None)
     spawn_angle_degrees = getattr(config, 'spawn_angle_degrees', None)
+    observation_mode = getattr(config, 'observation_mode', None)
+    thrower_delay_seconds = getattr(config, 'thrower_delay_seconds', None)
 
     config_parts = [f"{level_name}", f"action space: {action_space_type}"]
     if sprint_multiplier is not None:
         config_parts.append(f"sprint: {sprint_multiplier} ({1+sprint_multiplier}x)")
     if spawn_angle_degrees is not None:
         config_parts.append(f"spawn angle: ±{spawn_angle_degrees}°")
+    if observation_mode is not None:
+        config_parts.append(f"obs: {observation_mode}")
+    if thrower_delay_seconds is not None:
+        config_parts.append(f"thrower delay: {thrower_delay_seconds}s")
     print(f"Configuring game: {', '.join(config_parts)}...")
 
     temp_env.configure(
@@ -255,6 +261,8 @@ def train(
         action_space_type=action_space_type,
         sprint_multiplier=sprint_multiplier,
         spawn_angle_degrees=spawn_angle_degrees,
+        observation_mode=observation_mode,
+        thrower_delay_seconds=thrower_delay_seconds,
     )
     print(f"✓ Game configured: {', '.join(config_parts)}")
 

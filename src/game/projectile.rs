@@ -151,15 +151,9 @@ fn spawn_thrower_indicators(
     mut materials: ResMut<Assets<StandardMaterial>>,
     config: Res<GameConfig>,
     player_query: Query<&Transform, With<Player>>,
-    indicator_query: Query<&ThrowerIndicator>,
 ) {
     // Only spawn indicators in WithThrowerIndicator mode
     if config.observation_mode != ObservationMode::WithThrowerIndicator {
-        return;
-    }
-
-    // Only allow one indicator at a time
-    if !indicator_query.is_empty() {
         return;
     }
 
@@ -257,17 +251,14 @@ fn spawn_thrower_indicators_headless(
     time: Res<Time>,
     config: Res<GameConfig>,
     player_query: Query<&Transform, With<Player>>,
-    indicator_query: Query<&ThrowerIndicator>,
 ) {
     // Only spawn indicators in WithThrowerIndicator mode
     if config.observation_mode != ObservationMode::WithThrowerIndicator {
         return;
     }
 
-    // Only allow one indicator at a time
-    if !indicator_query.is_empty() {
-        return;
-    }
+    // Multiple indicators can exist simultaneously
+    // (e.g., spawn_interval=0.5s with thrower_delay=1.0s = up to 2 indicators in flight)
 
     timer.timer.tick(time.delta());
 

@@ -205,7 +205,7 @@ impl GameConfig {
             sprint_multiplier: 2.0,  // Sprint gives 3.0x speed (5.0 -> 15.0)
             spawn_angle_degrees: 60.0,  // ±60° = 120° total fan (not used when random_spawn_position=false)
             observation_mode: ObservationMode::default(),  // Standard 65-dim
-            thrower_delay_seconds: 1.0,  // 1 second warning before throw
+            thrower_delay_seconds: 0.5,  // 0.5 second warning before throw
         }
     }
 
@@ -224,7 +224,7 @@ impl GameConfig {
             sprint_multiplier: 2.0,  // Sprint gives 3.0x speed (5.0 -> 15.0)
             spawn_angle_degrees: 60.0,  // ±60° = 120° total fan
             observation_mode: ObservationMode::default(),  // Standard 65-dim
-            thrower_delay_seconds: 1.0,  // 1 second warning before throw
+            thrower_delay_seconds: 0.5,  // Must equal spawn_interval for same arrival rate
         }
     }
 }

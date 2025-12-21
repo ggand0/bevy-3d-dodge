@@ -65,6 +65,7 @@ fn run_headless(
 
     App::new()
         .add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(frame_duration)))
+        .add_plugins(bevy::log::LogPlugin::default())
         .insert_resource(Level::default())
         .insert_resource(GameConfig::default())
         .insert_resource(RLEnvironmentState::default())
