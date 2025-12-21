@@ -183,6 +183,8 @@ class BevyDodgeEnv(gym.Env):
         action_space_type: Optional[str] = None,
         sprint_multiplier: Optional[float] = None,
         spawn_angle_degrees: Optional[float] = None,
+        observation_mode: Optional[str] = None,
+        thrower_delay_seconds: Optional[float] = None,
     ) -> None:
         """Configure game settings.
 
@@ -191,6 +193,8 @@ class BevyDodgeEnv(gym.Env):
             action_space_type: Optional action space type ("discrete", "basic_3d", etc.)
             sprint_multiplier: Optional sprint speed multiplier (e.g., 2.0 = 3x speed at full sprint)
             spawn_angle_degrees: Optional half-angle for spawn fan (e.g., 30 = ±30° = 60° total)
+            observation_mode: Optional observation mode ("standard" for 65-dim, "with_thrower" for 69-dim)
+            thrower_delay_seconds: Optional delay before thrower indicator spawns projectile
 
         Note:
             - This is the preferred way to configure the game before training
@@ -204,7 +208,7 @@ class BevyDodgeEnv(gym.Env):
             >>> env.configure(action_space_type="basic_3d", sprint_multiplier=2.0, spawn_angle_degrees=30)
             >>> env.reset()  # Ensures config is synced
         """
-        if all(p is None for p in [level, action_space_type, sprint_multiplier, spawn_angle_degrees]):
+        if all(p is None for p in [level, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds]):
             raise ValueError("At least one configuration parameter must be provided")
 
         if level is not None and level not in (1, 2):
@@ -215,6 +219,12 @@ class BevyDodgeEnv(gym.Env):
 
         if spawn_angle_degrees is not None and (spawn_angle_degrees <= 0 or spawn_angle_degrees > 180):
             raise ValueError(f"Invalid spawn_angle_degrees: {spawn_angle_degrees}. Must be between 0 and 180")
+
+        if observation_mode is not None and observation_mode not in ("standard", "with_thrower"):
+            raise ValueError(f"Invalid observation_mode: {observation_mode}. Must be 'standard' or 'with_thrower'")
+
+        if thrower_delay_seconds is not None and (thrower_delay_seconds <= 0 or thrower_delay_seconds > 10):
+            raise ValueError(f"Invalid thrower_delay_seconds: {thrower_delay_seconds}. Must be between 0 and 10")
 
         # Note: action_space_type validation is handled server-side
         # Valid values: "discrete", "basic_3d", "basic_4d_jump", "tilt_5d", "full_6d"
@@ -228,6 +238,10 @@ class BevyDodgeEnv(gym.Env):
             config_data["sprint_multiplier"] = sprint_multiplier
         if spawn_angle_degrees is not None:
             config_data["spawn_angle_degrees"] = spawn_angle_degrees
+        if observation_mode is not None:
+            config_data["observation_mode"] = observation_mode
+        if thrower_delay_seconds is not None:
+            config_data["thrower_delay_seconds"] = thrower_delay_seconds
 
         try:
             response = requests.post(

@@ -50,6 +50,8 @@ pub enum EnvCommand {
         action_space_type: Option<String>,
         sprint_multiplier: Option<f32>,
         spawn_angle_degrees: Option<f32>,
+        observation_mode: Option<String>,
+        thrower_delay_seconds: Option<f32>,
     },
 }
 
@@ -81,6 +83,8 @@ struct ConfigureRequest {
     action_space_type: Option<String>,
     sprint_multiplier: Option<f32>,  // Speed multiplier (e.g., 2.0 = 3x speed at full sprint)
     spawn_angle_degrees: Option<f32>,  // Half-angle for spawn fan (e.g., 30 = ±30° = 60° total)
+    observation_mode: Option<String>,  // "standard" or "with_thrower"
+    thrower_delay_seconds: Option<f32>,  // Delay before thrower indicator spawns projectile
 }
 
 #[derive(Serialize)]
@@ -272,9 +276,14 @@ async fn step_handler(
     }))
 }
 
-async fn observation_space_handler() -> Json<ObservationSpaceResponse> {
+async fn observation_space_handler(
+    State(state): State<ApiState>,
+) -> Json<ObservationSpaceResponse> {
+    let game_config = state.game_config.lock().await;
+    let obs_size = game_config.observation_mode.observation_size();
+
     Json(ObservationSpaceResponse {
-        shape: vec![OBSERVATION_SIZE],
+        shape: vec![obs_size],
         dtype: "float32".to_string(),
         low: -100.0,
         high: 100.0,
@@ -386,6 +395,26 @@ async fn configure_handler(
         }
     }
 
+    // Validate observation_mode if provided
+    if let Some(ref obs_mode) = payload.observation_mode {
+        if crate::config::ObservationMode::from_str(obs_mode).is_none() {
+            return Err(AppError::InvalidAction(format!(
+                "Invalid observation_mode: '{}'. Must be 'standard' or 'with_thrower'",
+                obs_mode
+            )));
+        }
+    }
+
+    // Validate thrower_delay_seconds if provided
+    if let Some(delay) = payload.thrower_delay_seconds {
+        if delay <= 0.0 || delay > 10.0 {
+            return Err(AppError::InvalidAction(format!(
+                "Invalid thrower_delay_seconds: {}. Must be between 0 and 10",
+                delay
+            )));
+        }
+    }
+
     state
         .command_tx
         .send(EnvCommand::Configure {
@@ -393,6 +422,8 @@ async fn configure_handler(
             action_space_type: payload.action_space_type,
             sprint_multiplier: payload.sprint_multiplier,
             spawn_angle_degrees: payload.spawn_angle_degrees,
+            observation_mode: payload.observation_mode,
+            thrower_delay_seconds: payload.thrower_delay_seconds,
         })
         .map_err(|_| AppError::InternalError("Failed to send configure command".to_string()))?;
 

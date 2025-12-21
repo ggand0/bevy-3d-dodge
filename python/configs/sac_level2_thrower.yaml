@@ -1,0 +1,43 @@
+# SAC Level 2 with Thrower Indicator - 69-dim observation space
+# Adds anticipation mechanics: spawn visible indicator before each projectile
+# Usage: python python/train_sac.py --config python/configs/sac_level2_thrower.yaml
+
+algorithm: SAC
+port: 8000
+level: 2  # Difficulty level (1 = Baseline, 2 = Hard)
+action_space_type: basic_3d  # 3D: [vx, vy, sprint] - SAC requires continuous
+
+# Environment tuning (same as sac_level2_basic3d)
+sprint_multiplier: 1.0       # 2x speed at full sprint (base 5 -> 10)
+spawn_angle_degrees: 30      # +/-30 = 60 deg total fan
+
+# Thrower indicator mode (69-dim observation)
+observation_mode: with_thrower  # Extended observation with thrower position + time
+thrower_delay_seconds: 0.5      # Must equal spawn_interval for same arrival rate
+
+# Training
+total_timesteps: 1000000  # 1M steps
+learning_rate: 0.0003     # SAC default
+
+# SAC-specific parameters
+buffer_size: 1000000      # Replay buffer size (1M transitions)
+learning_starts: 10000    # Steps before training starts (fill buffer first)
+batch_size: 256           # Batch size for updates
+tau: 0.005                # Soft update coefficient for target networks
+train_freq: 1             # Update policy every step
+gradient_steps: 1         # Gradient steps per environment step
+ent_coef: auto            # Automatic entropy tuning (SAC's key feature)
+
+# Common parameters
+gamma: 0.99               # Discount factor
+
+# Network architecture
+net_arch: [256, 256]      # Same as baseline for fair comparison
+
+# Checkpointing & Evaluation
+save_freq: 50000          # Save every 50K steps
+eval_freq: 10000          # Evaluate every 10K steps
+n_eval_episodes: 10       # Robust evaluation
+
+# Device
+device: auto

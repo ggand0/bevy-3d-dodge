@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::config::GameConfig;
+use crate::config::{GameConfig, ObservationMode};
 use crate::game::player::Player;
 
 #[derive(Component)]
@@ -13,12 +13,29 @@ pub struct ProjectileSpawnTimer {
     pub timer: Timer,
 }
 
+/// Thrower indicator - spawns before projectile to give agent anticipation info
+#[derive(Component)]
+pub struct ThrowerIndicator {
+    /// Countdown timer until projectile spawns
+    pub spawn_timer: Timer,
+    /// Pre-computed spawn position for the projectile
+    pub spawn_position: Vec3,
+    /// Pre-computed velocity for the projectile
+    pub spawn_velocity: Vec3,
+}
+
 pub struct ProjectilePlugin;
 
 impl Plugin for ProjectilePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_projectile_timer)
-            .add_systems(Update, (spawn_projectiles, move_projectiles, cleanup_projectiles));
+            .add_systems(Update, (
+                spawn_projectiles,
+                spawn_thrower_indicators,
+                process_thrower_indicators,
+                move_projectiles,
+                cleanup_projectiles,
+            ));
     }
 }
 
@@ -28,8 +45,57 @@ pub struct HeadlessProjectilePlugin;
 impl Plugin for HeadlessProjectilePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_projectile_timer)
-            .add_systems(Update, (spawn_projectiles_headless, move_projectiles, cleanup_projectiles));
+            .add_systems(Update, (
+                spawn_projectiles_headless,
+                spawn_thrower_indicators_headless,
+                process_thrower_indicators_headless,
+                move_projectiles,
+                cleanup_projectiles,
+            ));
     }
+}
+
+/// Compute spawn position and velocity for a projectile
+fn compute_projectile_spawn(
+    config: &GameConfig,
+    player_pos: Vec3,
+) -> (Vec3, Vec3) {
+    let (spawn_x, spawn_y) = if config.random_spawn_position {
+        let half_angle_rad = config.spawn_angle_degrees.to_radians();
+        let angle = (rand::random::<f32>() - 0.5) * 2.0 * half_angle_rad;
+        let radius = config.projectile_spawn_distance;
+        let x = angle.sin() * radius;
+        let y = angle.cos() * radius;
+        (x, y)
+    } else {
+        let x = rand::random::<f32>() * 3.0 - 1.5;
+        let y = config.projectile_spawn_distance;
+        (x, y)
+    };
+
+    let (spawn_z, flight_time) = if config.random_spawn_position {
+        (1.5, 0.8)
+    } else {
+        (2.5, 2.0)
+    };
+
+    let target_x = player_pos.x;
+    let target_y = player_pos.y;
+    let target_z = config.player_start_height;
+
+    let dx = target_x - spawn_x;
+    let dy = target_y - spawn_y;
+    let dz = target_z - spawn_z;
+
+    let vx = dx / flight_time;
+    let vy = dy / flight_time;
+    let gravity = 9.8;
+    let vz = (dz + 0.5 * gravity * flight_time * flight_time) / flight_time;
+
+    let spawn_pos = Vec3::new(spawn_x, spawn_y, spawn_z);
+    let spawn_vel = Vec3::new(vx, vy, vz);
+
+    (spawn_pos, spawn_vel)
 }
 
 fn setup_projectile_timer(mut commands: Commands, config: Res<GameConfig>) {
@@ -38,6 +104,7 @@ fn setup_projectile_timer(mut commands: Commands, config: Res<GameConfig>) {
     });
 }
 
+/// Spawn projectiles directly (Standard observation mode only)
 fn spawn_projectiles(
     mut commands: Commands,
     mut timer: ResMut<ProjectileSpawnTimer>,
@@ -47,73 +114,109 @@ fn spawn_projectiles(
     config: Res<GameConfig>,
     player_query: Query<&Transform, With<Player>>,
 ) {
+    // Only spawn directly in Standard mode
+    if config.observation_mode != ObservationMode::Standard {
+        return;
+    }
+
     timer.timer.tick(time.delta());
 
     if timer.timer.just_finished() {
-        // Get player position to aim at
         if let Ok(player_transform) = player_query.get_single() {
-            let (spawn_x, spawn_y) = if config.random_spawn_position {
-                // Spawn from random position within configurable fan angle
-                // Convert degrees to radians: spawn_angle_degrees is the half-angle
-                let half_angle_rad = config.spawn_angle_degrees.to_radians();
-                let angle = (rand::random::<f32>() - 0.5) * 2.0 * half_angle_rad; // Random angle within ±half_angle
-                let radius = config.projectile_spawn_distance;
-                // Rotate to face +Y: use sin for x, cos for y (rotated 90° from standard)
-                let x = angle.sin() * radius;
-                let y = angle.cos() * radius;
-                (x, y)
-            } else {
-                // Level 1: Spawn from the +Y side (where the thrower would be)
-                let x = rand::random::<f32>() * 3.0 - 1.5; // Random X between -1.5 and 1.5
-                let y = config.projectile_spawn_distance;
-                (x, y)
-            };
-
-            // Level-specific trajectory settings
-            let (spawn_z, flight_time) = if config.random_spawn_position {
-                // Level 2: Lower, faster trajectory (like a real dodgeball throw)
-                (1.5, 0.8)
-            } else {
-                // Level 1: Original high arc trajectory
-                (2.5, 2.0)
-            };
-
-            // Target the player's current position
-            let target_x = player_transform.translation.x;
-            let target_y = player_transform.translation.y;
-            let target_z = config.player_start_height;
-
-            // Calculate velocity for arc trajectory
-            let dx = target_x - spawn_x;
-            let dy = target_y - spawn_y;
-            let dz = target_z - spawn_z;
-
-            // Initial velocity components
-            let vx = dx / flight_time;
-            let vy = dy / flight_time;
-            // For Z, we need to account for gravity: z = z0 + vz*t - 0.5*g*t^2
-            // So vz = (z - z0 + 0.5*g*t^2) / t
-            let gravity = 9.8;
-            let vz = (dz + 0.5 * gravity * flight_time * flight_time) / flight_time;
+            let (spawn_pos, spawn_vel) = compute_projectile_spawn(&config, player_transform.translation);
 
             commands.spawn((
                 Mesh3d(meshes.add(Sphere::new(0.3))),
                 MeshMaterial3d(materials.add(StandardMaterial {
                     base_color: Color::srgb(0.9, 0.2, 0.2),
-                    perceptual_roughness: 0.3, // Smooth rubber ball
+                    perceptual_roughness: 0.3,
                     metallic: 0.0,
-                    reflectance: 0.45, // Good reflectance for rubber
+                    reflectance: 0.45,
                     ..default()
                 })),
-                Transform::from_xyz(spawn_x, spawn_y, spawn_z),
+                Transform::from_translation(spawn_pos),
                 Projectile,
-                ProjectileVelocity(Vec3::new(vx, vy, vz)),
+                ProjectileVelocity(spawn_vel),
             ));
         }
     }
 }
 
-/// Spawn projectiles without rendering components (for headless mode)
+/// Spawn thrower indicators (WithThrowerIndicator mode only)
+fn spawn_thrower_indicators(
+    mut commands: Commands,
+    mut timer: ResMut<ProjectileSpawnTimer>,
+    time: Res<Time>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    config: Res<GameConfig>,
+    player_query: Query<&Transform, With<Player>>,
+) {
+    // Only spawn indicators in WithThrowerIndicator mode
+    if config.observation_mode != ObservationMode::WithThrowerIndicator {
+        return;
+    }
+
+    timer.timer.tick(time.delta());
+
+    if timer.timer.just_finished() {
+        if let Ok(player_transform) = player_query.get_single() {
+            let (spawn_pos, spawn_vel) = compute_projectile_spawn(&config, player_transform.translation);
+
+            commands.spawn((
+                Mesh3d(meshes.add(Sphere::new(0.2))),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: Color::srgb(1.0, 0.5, 0.0), // Orange indicator
+                    emissive: LinearRgba::new(1.0, 0.3, 0.0, 1.0), // Glowing
+                    perceptual_roughness: 0.5,
+                    metallic: 0.0,
+                    ..default()
+                })),
+                Transform::from_translation(spawn_pos),
+                ThrowerIndicator {
+                    spawn_timer: Timer::from_seconds(config.thrower_delay_seconds, TimerMode::Once),
+                    spawn_position: spawn_pos,
+                    spawn_velocity: spawn_vel,
+                },
+            ));
+        }
+    }
+}
+
+/// Process thrower indicators - spawn projectile when timer expires
+fn process_thrower_indicators(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut query: Query<(Entity, &mut ThrowerIndicator)>,
+) {
+    for (entity, mut indicator) in query.iter_mut() {
+        indicator.spawn_timer.tick(time.delta());
+
+        if indicator.spawn_timer.just_finished() {
+            // Spawn the projectile
+            commands.spawn((
+                Mesh3d(meshes.add(Sphere::new(0.3))),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: Color::srgb(0.9, 0.2, 0.2),
+                    perceptual_roughness: 0.3,
+                    metallic: 0.0,
+                    reflectance: 0.45,
+                    ..default()
+                })),
+                Transform::from_translation(indicator.spawn_position),
+                Projectile,
+                ProjectileVelocity(indicator.spawn_velocity),
+            ));
+
+            // Despawn the indicator
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+/// Spawn projectiles without rendering components (for headless mode, Standard mode only)
 fn spawn_projectiles_headless(
     mut commands: Commands,
     mut timer: ResMut<ProjectileSpawnTimer>,
@@ -121,47 +224,79 @@ fn spawn_projectiles_headless(
     config: Res<GameConfig>,
     player_query: Query<&Transform, With<Player>>,
 ) {
+    // Only spawn directly in Standard mode
+    if config.observation_mode != ObservationMode::Standard {
+        return;
+    }
+
     timer.timer.tick(time.delta());
 
     if timer.timer.just_finished() {
         if let Ok(player_transform) = player_query.get_single() {
-            let (spawn_x, spawn_y) = if config.random_spawn_position {
-                let half_angle_rad = config.spawn_angle_degrees.to_radians();
-                let angle = (rand::random::<f32>() - 0.5) * 2.0 * half_angle_rad;
-                let radius = config.projectile_spawn_distance;
-                let x = angle.sin() * radius;
-                let y = angle.cos() * radius;
-                (x, y)
-            } else {
-                let x = rand::random::<f32>() * 3.0 - 1.5;
-                let y = config.projectile_spawn_distance;
-                (x, y)
-            };
-
-            let (spawn_z, flight_time) = if config.random_spawn_position {
-                (1.5, 0.8)
-            } else {
-                (2.5, 2.0)
-            };
-
-            let target_x = player_transform.translation.x;
-            let target_y = player_transform.translation.y;
-            let target_z = config.player_start_height;
-
-            let dx = target_x - spawn_x;
-            let dy = target_y - spawn_y;
-            let dz = target_z - spawn_z;
-
-            let vx = dx / flight_time;
-            let vy = dy / flight_time;
-            let gravity = 9.8;
-            let vz = (dz + 0.5 * gravity * flight_time * flight_time) / flight_time;
+            let (spawn_pos, spawn_vel) = compute_projectile_spawn(&config, player_transform.translation);
 
             commands.spawn((
-                Transform::from_xyz(spawn_x, spawn_y, spawn_z),
+                Transform::from_translation(spawn_pos),
                 Projectile,
-                ProjectileVelocity(Vec3::new(vx, vy, vz)),
+                ProjectileVelocity(spawn_vel),
             ));
+        }
+    }
+}
+
+/// Spawn thrower indicators in headless mode (WithThrowerIndicator mode only)
+fn spawn_thrower_indicators_headless(
+    mut commands: Commands,
+    mut timer: ResMut<ProjectileSpawnTimer>,
+    time: Res<Time>,
+    config: Res<GameConfig>,
+    player_query: Query<&Transform, With<Player>>,
+) {
+    // Only spawn indicators in WithThrowerIndicator mode
+    if config.observation_mode != ObservationMode::WithThrowerIndicator {
+        return;
+    }
+
+    // Multiple indicators can exist simultaneously
+    // (e.g., spawn_interval=0.5s with thrower_delay=1.0s = up to 2 indicators in flight)
+
+    timer.timer.tick(time.delta());
+
+    if timer.timer.just_finished() {
+        if let Ok(player_transform) = player_query.get_single() {
+            let (spawn_pos, spawn_vel) = compute_projectile_spawn(&config, player_transform.translation);
+
+            commands.spawn((
+                Transform::from_translation(spawn_pos),
+                ThrowerIndicator {
+                    spawn_timer: Timer::from_seconds(config.thrower_delay_seconds, TimerMode::Once),
+                    spawn_position: spawn_pos,
+                    spawn_velocity: spawn_vel,
+                },
+            ));
+        }
+    }
+}
+
+/// Process thrower indicators in headless mode - spawn projectile when timer expires
+fn process_thrower_indicators_headless(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut ThrowerIndicator)>,
+) {
+    for (entity, mut indicator) in query.iter_mut() {
+        indicator.spawn_timer.tick(time.delta());
+
+        if indicator.spawn_timer.just_finished() {
+            // Spawn the projectile without rendering
+            commands.spawn((
+                Transform::from_translation(indicator.spawn_position),
+                Projectile,
+                ProjectileVelocity(indicator.spawn_velocity),
+            ));
+
+            // Despawn the indicator
+            commands.entity(entity).despawn();
         }
     }
 }

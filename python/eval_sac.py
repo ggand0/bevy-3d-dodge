@@ -25,6 +25,8 @@ def evaluate_agent(
     render: bool = False,
     sprint_multiplier: float = None,
     spawn_angle_degrees: float = None,
+    observation_mode: str = None,
+    thrower_delay_seconds: float = None,
 ):
     """Evaluate trained SAC agent.
 
@@ -75,6 +77,10 @@ def evaluate_agent(
         config_parts.append(f"sprint: {sprint_multiplier} ({1+sprint_multiplier}x)")
     if spawn_angle_degrees is not None:
         config_parts.append(f"spawn angle: ±{spawn_angle_degrees}°")
+    if observation_mode is not None:
+        config_parts.append(f"obs: {observation_mode}")
+    if thrower_delay_seconds is not None:
+        config_parts.append(f"thrower delay: {thrower_delay_seconds}s")
     print(f"Configuring Bevy server ({', '.join(config_parts)})...")
 
     temp_env = BevyDodgeEnv(port=port)
@@ -86,6 +92,8 @@ def evaluate_agent(
             action_space_type=action_space_type,
             sprint_multiplier=sprint_multiplier,
             spawn_angle_degrees=spawn_angle_degrees,
+            observation_mode=observation_mode,
+            thrower_delay_seconds=thrower_delay_seconds,
         )
         temp_env.reset()  # Sync state
     else:
@@ -94,6 +102,8 @@ def evaluate_agent(
             level=level,
             sprint_multiplier=sprint_multiplier,
             spawn_angle_degrees=spawn_angle_degrees,
+            observation_mode=observation_mode,
+            thrower_delay_seconds=thrower_delay_seconds,
         )
         temp_env.reset()
 
@@ -284,6 +294,19 @@ Examples:
         default=None,
         help="Half-angle for spawn fan in degrees (e.g., 30=±30°). Uses level default if not specified.",
     )
+    parser.add_argument(
+        "--observation-mode",
+        type=str,
+        choices=["standard", "with_thrower"],
+        default=None,
+        help="Observation mode ('standard' for 65-dim, 'with_thrower' for 69-dim). Uses model's trained mode if not specified.",
+    )
+    parser.add_argument(
+        "--thrower-delay",
+        type=float,
+        default=None,
+        help="Delay before thrower indicator spawns projectile (seconds). Uses level default if not specified.",
+    )
 
     args = parser.parse_args()
 
@@ -315,6 +338,8 @@ Examples:
             render=args.render,
             sprint_multiplier=args.sprint_multiplier,
             spawn_angle_degrees=args.spawn_angle,
+            observation_mode=args.observation_mode,
+            thrower_delay_seconds=args.thrower_delay,
         )
 
         # Print summary
