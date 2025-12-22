@@ -5,17 +5,20 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 use tower_http::cors::{Any, CorsLayer};
 
+use crate::config::{IMAGE_OBS_WIDTH, IMAGE_OBS_HEIGHT, IMAGE_OBS_CHANNELS, ObservationMode};
 use crate::rl::observation::OBSERVATION_SIZE;
 
 /// Shared state between Axum server and Bevy game loop
 #[derive(Clone, bevy::prelude::Resource)]
 pub struct SharedEnvState {
     pub observation: Arc<Mutex<Vec<f32>>>,
+    pub image_observation: Arc<Mutex<Vec<u8>>>,  // RGB image bytes for TopDownImage mode
     pub reward: Arc<Mutex<f32>>,
     pub done: Arc<Mutex<bool>>,
     pub truncated: Arc<Mutex<bool>>,
@@ -28,6 +31,7 @@ impl Default for SharedEnvState {
     fn default() -> Self {
         Self {
             observation: Arc::new(Mutex::new(vec![0.0; OBSERVATION_SIZE])),
+            image_observation: Arc::new(Mutex::new(vec![0u8; (IMAGE_OBS_WIDTH * IMAGE_OBS_HEIGHT * IMAGE_OBS_CHANNELS) as usize])),
             reward: Arc::new(Mutex::new(0.0)),
             done: Arc::new(Mutex::new(false)),
             truncated: Arc::new(Mutex::new(false)),
@@ -90,12 +94,16 @@ struct ConfigureRequest {
 #[derive(Serialize)]
 struct ResetResponse {
     observation: Vec<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image_observation: Option<String>,  // Base64-encoded RGB image for TopDownImage mode
     info: std::collections::HashMap<String, serde_json::Value>,
 }
 
 #[derive(Serialize)]
 struct StepResponse {
     observation: Vec<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image_observation: Option<String>,  // Base64-encoded RGB image for TopDownImage mode
     reward: f32,
     done: bool,
     truncated: bool,
@@ -146,6 +154,11 @@ async fn reset_handler(
     // Wait a bit for game loop to process reset (simple synchronization)
     tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
+    // Check observation mode
+    let game_config = state.game_config.lock().await;
+    let obs_mode = game_config.observation_mode;
+    drop(game_config);
+
     // Read observation and info from shared state
     let observation = state
         .shared_state
@@ -154,6 +167,19 @@ async fn reset_handler(
         .await
         .clone();
 
+    // Get image observation if in TopDownImage mode
+    let image_observation = if obs_mode == ObservationMode::TopDownImage {
+        let image_bytes = state
+            .shared_state
+            .image_observation
+            .lock()
+            .await
+            .clone();
+        Some(BASE64.encode(&image_bytes))
+    } else {
+        None
+    };
+
     let info = state
         .shared_state
         .info
@@ -161,16 +187,17 @@ async fn reset_handler(
         .await
         .clone();
 
-    Ok(Json(ResetResponse { observation, info }))
+    Ok(Json(ResetResponse { observation, image_observation, info }))
 }
 
 async fn step_handler(
     State(state): State<ApiState>,
     Json(request): Json<StepRequest>,
 ) -> Result<Json<StepResponse>, AppError> {
-    // Get current action space type from config
+    // Get current action space type and observation mode from config
     let game_config = state.game_config.lock().await;
     let action_space_type = game_config.action_space_type;
+    let obs_mode = game_config.observation_mode;
     drop(game_config); // Release lock
 
     // Parse and validate action based on action space type
@@ -267,8 +294,22 @@ async fn step_handler(
         .await
         .clone();
 
+    // Get image observation if in TopDownImage mode
+    let image_observation = if obs_mode == ObservationMode::TopDownImage {
+        let image_bytes = state
+            .shared_state
+            .image_observation
+            .lock()
+            .await
+            .clone();
+        Some(BASE64.encode(&image_bytes))
+    } else {
+        None
+    };
+
     Ok(Json(StepResponse {
         observation,
+        image_observation,
         reward,
         done,
         truncated,
@@ -280,14 +321,27 @@ async fn observation_space_handler(
     State(state): State<ApiState>,
 ) -> Json<ObservationSpaceResponse> {
     let game_config = state.game_config.lock().await;
-    let obs_size = game_config.observation_mode.observation_size();
+    let obs_mode = game_config.observation_mode;
 
-    Json(ObservationSpaceResponse {
-        shape: vec![obs_size],
-        dtype: "float32".to_string(),
-        low: -100.0,
-        high: 100.0,
-    })
+    // Return appropriate shape based on observation mode
+    if let Some((width, height, channels)) = obs_mode.image_shape() {
+        // Image observation: (height, width, channels) in HWC format
+        Json(ObservationSpaceResponse {
+            shape: vec![height as usize, width as usize, channels as usize],
+            dtype: "uint8".to_string(),
+            low: 0.0,
+            high: 255.0,
+        })
+    } else {
+        // Vector observation
+        let obs_size = obs_mode.observation_size();
+        Json(ObservationSpaceResponse {
+            shape: vec![obs_size],
+            dtype: "float32".to_string(),
+            low: -100.0,
+            high: 100.0,
+        })
+    }
 }
 
 async fn action_space_handler(
@@ -399,7 +453,7 @@ async fn configure_handler(
     if let Some(ref obs_mode) = payload.observation_mode {
         if crate::config::ObservationMode::from_str(obs_mode).is_none() {
             return Err(AppError::InvalidAction(format!(
-                "Invalid observation_mode: '{}'. Must be 'standard' or 'with_thrower'",
+                "Invalid observation_mode: '{}'. Must be 'standard', 'with_thrower', or 'topdown'",
                 obs_mode
             )));
         }

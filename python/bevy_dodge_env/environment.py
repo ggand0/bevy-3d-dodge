@@ -1,5 +1,6 @@
 """Gymnasium environment for Bevy 3D dodge game."""
 
+import base64
 from typing import Any, Dict, Optional, Tuple
 
 import gymnasium as gym
@@ -42,13 +43,26 @@ class BevyDodgeEnv(gym.Env):
                 f"Make sure the game is running. Error: {e}"
             ) from e
 
-        # Define observation space
-        self.observation_space = spaces.Box(
-            low=obs_space_info["low"],
-            high=obs_space_info["high"],
-            shape=tuple(obs_space_info["shape"]),
-            dtype=np.float32,
-        )
+        # Define observation space - check dtype for image vs vector observations
+        obs_dtype = obs_space_info.get("dtype", "float32")
+        self._is_image_obs = obs_dtype == "uint8"
+
+        if self._is_image_obs:
+            # Image observation: (height, width, channels) with uint8
+            self.observation_space = spaces.Box(
+                low=int(obs_space_info["low"]),
+                high=int(obs_space_info["high"]),
+                shape=tuple(obs_space_info["shape"]),
+                dtype=np.uint8,
+            )
+        else:
+            # Vector observation: (obs_dim,) with float32
+            self.observation_space = spaces.Box(
+                low=obs_space_info["low"],
+                high=obs_space_info["high"],
+                shape=tuple(obs_space_info["shape"]),
+                dtype=np.float32,
+            )
 
         # Define action space
         if action_space_info["type"] == "Discrete":
@@ -85,7 +99,16 @@ class BevyDodgeEnv(gym.Env):
         except requests.exceptions.RequestException as e:
             raise RuntimeError(f"Failed to reset environment: {e}") from e
 
-        observation = np.array(response["observation"], dtype=np.float32)
+        # Decode observation based on mode
+        if self._is_image_obs:
+            # Decode base64 image and reshape to (H, W, C)
+            image_bytes = base64.b64decode(response["image_observation"])
+            observation = np.frombuffer(image_bytes, dtype=np.uint8).reshape(
+                self.observation_space.shape
+            )
+        else:
+            observation = np.array(response["observation"], dtype=np.float32)
+
         info = response["info"]
 
         return observation, info
@@ -122,7 +145,16 @@ class BevyDodgeEnv(gym.Env):
         except requests.exceptions.RequestException as e:
             raise RuntimeError(f"Failed to execute step: {e}") from e
 
-        observation = np.array(response["observation"], dtype=np.float32)
+        # Decode observation based on mode
+        if self._is_image_obs:
+            # Decode base64 image and reshape to (H, W, C)
+            image_bytes = base64.b64decode(response["image_observation"])
+            observation = np.frombuffer(image_bytes, dtype=np.uint8).reshape(
+                self.observation_space.shape
+            )
+        else:
+            observation = np.array(response["observation"], dtype=np.float32)
+
         reward = float(response["reward"])
         terminated = bool(response["done"])
         truncated = bool(response.get("truncated", False))
@@ -193,7 +225,7 @@ class BevyDodgeEnv(gym.Env):
             action_space_type: Optional action space type ("discrete", "basic_3d", etc.)
             sprint_multiplier: Optional sprint speed multiplier (e.g., 2.0 = 3x speed at full sprint)
             spawn_angle_degrees: Optional half-angle for spawn fan (e.g., 30 = ±30° = 60° total)
-            observation_mode: Optional observation mode ("standard" for 65-dim, "with_thrower" for 69-dim)
+            observation_mode: Optional observation mode ("standard" for 65-dim, "with_thrower" for 69-dim, "topdown" for 256x256 RGB image)
             thrower_delay_seconds: Optional delay before thrower indicator spawns projectile
 
         Note:
@@ -220,8 +252,8 @@ class BevyDodgeEnv(gym.Env):
         if spawn_angle_degrees is not None and (spawn_angle_degrees <= 0 or spawn_angle_degrees > 180):
             raise ValueError(f"Invalid spawn_angle_degrees: {spawn_angle_degrees}. Must be between 0 and 180")
 
-        if observation_mode is not None and observation_mode not in ("standard", "with_thrower"):
-            raise ValueError(f"Invalid observation_mode: {observation_mode}. Must be 'standard' or 'with_thrower'")
+        if observation_mode is not None and observation_mode not in ("standard", "with_thrower", "topdown"):
+            raise ValueError(f"Invalid observation_mode: {observation_mode}. Must be 'standard', 'with_thrower', or 'topdown'")
 
         if thrower_delay_seconds is not None and (thrower_delay_seconds <= 0 or thrower_delay_seconds > 10):
             raise ValueError(f"Invalid thrower_delay_seconds: {thrower_delay_seconds}. Must be between 0 and 10")
@@ -252,6 +284,11 @@ class BevyDodgeEnv(gym.Env):
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
             raise RuntimeError(f"Failed to configure game: {e}") from e
+
+    @property
+    def is_image_observation(self) -> bool:
+        """Return True if the environment uses image observations (for CNN policies)."""
+        return self._is_image_obs
 
     def close(self) -> None:
         """Close the environment and disable training mode if enabled."""

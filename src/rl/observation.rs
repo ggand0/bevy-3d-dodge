@@ -77,6 +77,10 @@ pub fn extract_observation_with_mode(
         ObservationMode::Standard => {
             extract_observation(player_query, projectile_query)
         }
+        ObservationMode::TopDownImage => {
+            // For image mode, return empty vector - images are handled separately
+            Vec::new()
+        }
         ObservationMode::WithThrowerIndicator => {
             let mut observation = vec![0.0; OBSERVATION_SIZE_EXTENDED];
 

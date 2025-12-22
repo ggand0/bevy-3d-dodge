@@ -21,7 +21,7 @@ import numpy as np
 from stable_baselines3 import SAC
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
 from tensorboard.backend.event_processing import event_accumulator
 
 from bevy_dodge_env import BevyDodgeEnv
@@ -274,9 +274,15 @@ def train(
     # Now create the actual training environment
     print("Creating training environment with configured action space...")
     env = DummyVecEnv([lambda: make_env(config.port)])
+
+    # Detect if using image observations
+    is_image_obs = observation_mode == "topdown"
+    policy_type = "CnnPolicy" if is_image_obs else "MlpPolicy"
+
     print(f"✓ Environment created")
     print(f"  Observation space: {env.observation_space}")
     print(f"  Action space: {env.action_space}")
+    print(f"  Policy type: {policy_type}")
     print()
 
     # Enable training mode to prevent accidental keyboard interruptions
@@ -287,20 +293,30 @@ def train(
 
     # Create evaluation environment
     eval_env = DummyVecEnv([lambda: make_env(config.port)])
+    # Wrap eval env in VecTransposeImage for image observations (matches training env)
+    if is_image_obs:
+        eval_env = VecTransposeImage(eval_env)
 
     # Create or load SAC agent
     if resume_path:
-        # Find the latest checkpoint or final model to resume from
-        checkpoint_dir = save_path / "checkpoints"
-        final_model = save_path / "final_model.zip"
+        resume_path_obj = Path(resume_path)
 
-        model_to_load = None
-        if final_model.exists():
-            model_to_load = final_model
-        elif checkpoint_dir.exists():
-            checkpoints = sorted(checkpoint_dir.glob("sac_dodge_*.zip"))
-            if checkpoints:
-                model_to_load = checkpoints[-1]
+        # Check if resume_path is a direct path to a .zip file
+        if resume_path_obj.suffix == ".zip" and resume_path_obj.exists():
+            model_to_load = resume_path_obj
+        else:
+            # It's a run directory - find model to load
+            checkpoint_dir = save_path / "checkpoints"
+            final_model = save_path / "final_model.zip"
+
+            model_to_load = None
+            # Prioritize latest checkpoint over final_model
+            if checkpoint_dir.exists():
+                checkpoints = sorted(checkpoint_dir.glob("sac_dodge_*.zip"))
+                if checkpoints:
+                    model_to_load = checkpoints[-1]
+            if model_to_load is None and final_model.exists():
+                model_to_load = final_model
 
         if model_to_load is None:
             print("Error: No model found to resume from")
@@ -318,7 +334,7 @@ def train(
             policy_kwargs = {"net_arch": config.net_arch}
 
         model = SAC(
-            policy="MlpPolicy",
+            policy=policy_type,
             env=env,
             learning_rate=config.learning_rate,
             buffer_size=buffer_size,

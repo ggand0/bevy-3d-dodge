@@ -103,7 +103,14 @@ pub enum ObservationMode {
     Standard,
     /// Extended 69-dim observation with thrower indicator info
     WithThrowerIndicator,
+    /// Top-down rendered image (256x256 RGB)
+    TopDownImage,
 }
+
+/// Image observation configuration
+pub const IMAGE_OBS_WIDTH: u32 = 256;
+pub const IMAGE_OBS_HEIGHT: u32 = 256;
+pub const IMAGE_OBS_CHANNELS: u32 = 3;  // RGB
 
 impl ObservationMode {
     /// Parse from string (for API)
@@ -111,15 +118,30 @@ impl ObservationMode {
         match s.to_lowercase().as_str() {
             "standard" | "default" => Some(Self::Standard),
             "with_thrower" | "thrower" | "with_thrower_indicator" => Some(Self::WithThrowerIndicator),
+            "topdown" | "topdown_image" | "image" => Some(Self::TopDownImage),
             _ => None,
         }
     }
 
-    /// Get observation size for this mode
+    /// Check if this mode uses image observations
+    pub fn is_image_mode(&self) -> bool {
+        matches!(self, Self::TopDownImage)
+    }
+
+    /// Get observation size for vector modes (returns 0 for image mode)
     pub fn observation_size(&self) -> usize {
         match self {
             Self::Standard => 65,
             Self::WithThrowerIndicator => 69,
+            Self::TopDownImage => 0,  // Image mode doesn't use vector size
+        }
+    }
+
+    /// Get image dimensions for image mode (width, height, channels)
+    pub fn image_shape(&self) -> Option<(u32, u32, u32)> {
+        match self {
+            Self::TopDownImage => Some((IMAGE_OBS_WIDTH, IMAGE_OBS_HEIGHT, IMAGE_OBS_CHANNELS)),
+            _ => None,
         }
     }
 }
