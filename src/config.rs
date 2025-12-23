@@ -107,9 +107,9 @@ pub enum ObservationMode {
     TopDownImage,
 }
 
-/// Image observation configuration
-pub const IMAGE_OBS_WIDTH: u32 = 256;
-pub const IMAGE_OBS_HEIGHT: u32 = 256;
+/// Image observation configuration - default values (Atari-standard 84x84)
+pub const IMAGE_OBS_WIDTH: u32 = 84;
+pub const IMAGE_OBS_HEIGHT: u32 = 84;
 pub const IMAGE_OBS_CHANNELS: u32 = 3;  // RGB
 
 impl ObservationMode {
@@ -200,6 +200,8 @@ pub struct GameConfig {
     pub spawn_angle_degrees: f32,  // Half-angle for spawn fan in degrees (e.g., 60 = ±60° = 120° total)
     pub observation_mode: ObservationMode,  // Standard (65-dim) or WithThrowerIndicator (69-dim)
     pub thrower_delay_seconds: f32,  // Delay before thrower indicator spawns projectile
+    pub image_obs_width: u32,   // Image observation width (default 84, Atari-standard)
+    pub image_obs_height: u32,  // Image observation height (default 84, Atari-standard)
 }
 
 impl GameConfig {
@@ -228,6 +230,8 @@ impl GameConfig {
             spawn_angle_degrees: 60.0,  // ±60° = 120° total fan (not used when random_spawn_position=false)
             observation_mode: ObservationMode::default(),  // Standard 65-dim
             thrower_delay_seconds: 0.5,  // 0.5 second warning before throw
+            image_obs_width: IMAGE_OBS_WIDTH,
+            image_obs_height: IMAGE_OBS_HEIGHT,
         }
     }
 
@@ -247,6 +251,8 @@ impl GameConfig {
             spawn_angle_degrees: 60.0,  // ±60° = 120° total fan
             observation_mode: ObservationMode::default(),  // Standard 65-dim
             thrower_delay_seconds: 0.5,  // Must equal spawn_interval for same arrival rate
+            image_obs_width: IMAGE_OBS_WIDTH,
+            image_obs_height: IMAGE_OBS_HEIGHT,
         }
     }
 }

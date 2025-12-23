@@ -55,6 +55,9 @@ class TrainingConfig:
     observation_mode: Optional[str] = None  # "standard" (65-dim) or "with_thrower" (69-dim). None = use level default
     thrower_delay_seconds: Optional[float] = None  # Delay before thrower spawns projectile. None = use level default
 
+    # Frame stacking for image observations (helps CNN infer velocity)
+    frame_stack: Optional[int] = None  # Number of frames to stack (e.g., 4). None = no stacking
+
     # Paths
     save_dir: str = "models"
     log_dir: str = "logs"

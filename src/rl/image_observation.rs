@@ -1,6 +1,7 @@
 //! Top-down image observation for CNN-based RL agents.
 //!
-//! Renders a 256x256 RGB top-down view of the arena for use as observation.
+//! Renders a configurable RGB top-down view of the arena for use as observation.
+//! Default is 84x84 (Atari-standard) but can be configured.
 
 use bevy::prelude::*;
 use bevy::render::camera::RenderTarget;
@@ -127,11 +128,13 @@ pub fn generate_synthetic_topdown_image(
     projectile_positions: &[(Vec3, Vec3)], // (position, velocity)
     thrower_pos: Option<Vec3>,
     arena_size: f32,
+    width: u32,
+    height: u32,
 ) -> Vec<u8> {
-    let width = IMAGE_OBS_WIDTH as usize;
-    let height = IMAGE_OBS_HEIGHT as usize;
-    let mut pixels = vec![0u8; width * height * 3]; // RGB
-    generate_synthetic_topdown_image_into(&mut pixels, player_pos, projectile_positions, thrower_pos, arena_size);
+    let w = width as usize;
+    let h = height as usize;
+    let mut pixels = vec![0u8; w * h * 3]; // RGB
+    generate_synthetic_topdown_image_into(&mut pixels, player_pos, projectile_positions, thrower_pos, arena_size, width, height);
     pixels
 }
 
@@ -143,9 +146,11 @@ pub fn generate_synthetic_topdown_image_into(
     projectile_positions: &[(Vec3, Vec3)], // (position, velocity)
     thrower_pos: Option<Vec3>,
     arena_size: f32,
+    width: u32,
+    height: u32,
 ) {
-    let width = IMAGE_OBS_WIDTH as usize;
-    let height = IMAGE_OBS_HEIGHT as usize;
+    let width = width as usize;
+    let height = height as usize;
 
     // Ensure buffer is the right size
     debug_assert_eq!(pixels.len(), width * height * 3, "Image buffer has wrong size");
@@ -262,12 +267,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_synthetic_image_dimensions() {
+    fn test_synthetic_image_dimensions_84x84() {
         let image = generate_synthetic_topdown_image(
             Vec3::ZERO,
             &[],
             None,
             24.0,
+            84,
+            84,
+        );
+        assert_eq!(image.len(), 84 * 84 * 3);
+    }
+
+    #[test]
+    fn test_synthetic_image_dimensions_256x256() {
+        let image = generate_synthetic_topdown_image(
+            Vec3::ZERO,
+            &[],
+            None,
+            24.0,
+            256,
+            256,
         );
         assert_eq!(image.len(), 256 * 256 * 3);
     }
@@ -283,8 +303,10 @@ mod tests {
             &projectiles,
             Some(Vec3::new(0.0, 10.0, 1.0)),
             24.0,
+            84,
+            84,
         );
-        assert_eq!(image.len(), 256 * 256 * 3);
+        assert_eq!(image.len(), 84 * 84 * 3);
         // Image should have non-zero pixels (not all black)
         assert!(image.iter().any(|&p| p > 0));
     }

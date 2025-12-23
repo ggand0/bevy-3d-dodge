@@ -21,7 +21,7 @@ import numpy as np
 from stable_baselines3 import SAC
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback, BaseCallback
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
+from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage, VecFrameStack
 from tensorboard.backend.event_processing import event_accumulator
 
 from bevy_dodge_env import BevyDodgeEnv
@@ -326,10 +326,18 @@ def train(
     is_image_obs = observation_mode == "topdown"
     policy_type = "CnnPolicy" if is_image_obs else "MlpPolicy"
 
+    # Apply frame stacking for image observations (helps CNN infer velocity)
+    frame_stack = getattr(config, 'frame_stack', None)
+    if frame_stack and frame_stack > 1 and is_image_obs:
+        print(f"Applying frame stacking: {frame_stack} frames")
+        env = VecFrameStack(env, n_stack=frame_stack)
+
     print(f"✓ Environment created")
     print(f"  Observation space: {env.observation_space}")
     print(f"  Action space: {env.action_space}")
     print(f"  Policy type: {policy_type}")
+    if frame_stack and frame_stack > 1:
+        print(f"  Frame stack: {frame_stack}")
     print()
 
     # Enable training mode to prevent accidental keyboard interruptions
@@ -340,7 +348,9 @@ def train(
 
     # Create evaluation environment
     eval_env = DummyVecEnv([lambda: make_env(config.port)])
-    # Wrap eval env in VecTransposeImage for image observations (matches training env)
+    # Wrap eval env with same settings as training env
+    if frame_stack and frame_stack > 1 and is_image_obs:
+        eval_env = VecFrameStack(eval_env, n_stack=frame_stack)
     if is_image_obs:
         eval_env = VecTransposeImage(eval_env)
 

@@ -924,7 +924,7 @@ fn handle_rl_commands(
                 // Increment step counter
                 env_state.episode_steps += 1;
             }
-            EnvCommand::Configure { level: level_num, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds } => {
+            EnvCommand::Configure { level: level_num, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds, image_obs_width, image_obs_height } => {
                 // Update level if provided
                 if let Some(level_num) = level_num {
                     let new_level = match level_num {
@@ -989,6 +989,16 @@ fn handle_rl_commands(
                 if let Some(delay) = thrower_delay_seconds {
                     config.thrower_delay_seconds = delay;
                     info!("Thrower delay set to: {}s", delay);
+                }
+
+                // Update image dimensions if provided
+                if let Some(width) = image_obs_width {
+                    config.image_obs_width = width;
+                    info!("Image observation width set to: {}", width);
+                }
+                if let Some(height) = image_obs_height {
+                    config.image_obs_height = height;
+                    info!("Image observation height set to: {}", height);
                 }
 
                 // Sync shared config for API server
@@ -1107,6 +1117,8 @@ fn update_rl_state(
             &projectiles,
             thrower_pos,
             24.0, // Arena size
+            game_config.image_obs_width,
+            game_config.image_obs_height,
         );
         drop(image_buffer); // Release lock explicitly
     }
@@ -1237,7 +1249,7 @@ fn handle_rl_commands_headless(
                 }
                 env_state.episode_steps += 1;
             }
-            EnvCommand::Configure { level: level_num, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds } => {
+            EnvCommand::Configure { level: level_num, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds, image_obs_width, image_obs_height } => {
                 if let Some(level_num) = level_num {
                     let new_level = match level_num {
                         1 => Level::Level1,
@@ -1296,6 +1308,17 @@ fn handle_rl_commands_headless(
                 if let Some(delay) = thrower_delay_seconds {
                     config.thrower_delay_seconds = delay;
                     info!("Thrower delay set to: {}s", delay);
+                }
+
+                // Update image dimensions if provided
+                // Note: This updates the config but requires server restart to resize buffer
+                if let Some(width) = image_obs_width {
+                    config.image_obs_width = width;
+                    info!("Image observation width set to: {}", width);
+                }
+                if let Some(height) = image_obs_height {
+                    config.image_obs_height = height;
+                    info!("Image observation height set to: {}", height);
                 }
 
                 let mut shared = shared_config.0.blocking_lock();

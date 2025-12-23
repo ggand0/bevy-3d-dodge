@@ -56,6 +56,8 @@ pub enum EnvCommand {
         spawn_angle_degrees: Option<f32>,
         observation_mode: Option<String>,
         thrower_delay_seconds: Option<f32>,
+        image_obs_width: Option<u32>,
+        image_obs_height: Option<u32>,
     },
 }
 
@@ -89,6 +91,8 @@ struct ConfigureRequest {
     spawn_angle_degrees: Option<f32>,  // Half-angle for spawn fan (e.g., 30 = ±30° = 60° total)
     observation_mode: Option<String>,  // "standard" or "with_thrower"
     thrower_delay_seconds: Option<f32>,  // Delay before thrower indicator spawns projectile
+    image_obs_width: Option<u32>,  // Image observation width (default 84)
+    image_obs_height: Option<u32>,  // Image observation height (default 84)
 }
 
 #[derive(Serialize)]
@@ -334,10 +338,15 @@ async fn observation_space_handler(
     let obs_mode = game_config.observation_mode;
 
     // Return appropriate shape based on observation mode
-    if let Some((width, height, channels)) = obs_mode.image_shape() {
+    if obs_mode.is_image_mode() {
         // Image observation: (height, width, channels) in HWC format
+        // Use configured dimensions from game_config
         Json(ObservationSpaceResponse {
-            shape: vec![height as usize, width as usize, channels as usize],
+            shape: vec![
+                game_config.image_obs_height as usize,
+                game_config.image_obs_width as usize,
+                IMAGE_OBS_CHANNELS as usize,
+            ],
             dtype: "uint8".to_string(),
             low: 0.0,
             high: 255.0,
@@ -479,6 +488,26 @@ async fn configure_handler(
         }
     }
 
+    // Validate image_obs_width if provided
+    if let Some(width) = payload.image_obs_width {
+        if width < 32 || width > 512 {
+            return Err(AppError::InvalidAction(format!(
+                "Invalid image_obs_width: {}. Must be between 32 and 512",
+                width
+            )));
+        }
+    }
+
+    // Validate image_obs_height if provided
+    if let Some(height) = payload.image_obs_height {
+        if height < 32 || height > 512 {
+            return Err(AppError::InvalidAction(format!(
+                "Invalid image_obs_height: {}. Must be between 32 and 512",
+                height
+            )));
+        }
+    }
+
     state
         .command_tx
         .send(EnvCommand::Configure {
@@ -488,6 +517,8 @@ async fn configure_handler(
             spawn_angle_degrees: payload.spawn_angle_degrees,
             observation_mode: payload.observation_mode,
             thrower_delay_seconds: payload.thrower_delay_seconds,
+            image_obs_width: payload.image_obs_width,
+            image_obs_height: payload.image_obs_height,
         })
         .map_err(|_| AppError::InternalError("Failed to send configure command".to_string()))?;
 
