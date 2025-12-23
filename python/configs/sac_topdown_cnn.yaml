@@ -11,7 +11,7 @@ action_space_type: basic_3d  # 3D: [vx, vy, sprint] - SAC requires continuous
 observation_mode: topdown  # 256x256 RGB top-down view (uses CnnPolicy)
 
 # Arena tuning
-spawn_angle_degrees: 60       # ±60° = 120° total fan
+spawn_angle_degrees: 30       # ±30° = 60° total fan (easier for CNN learning)
 sprint_multiplier: 1.0        # 2x speed at full sprint (base 5 -> 10)
 
 # Training - shorter for CNN since it's more compute intensive

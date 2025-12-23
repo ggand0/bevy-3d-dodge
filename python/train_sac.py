@@ -39,20 +39,16 @@ class CleanupReplayBufferCallback(BaseCallback):
         super().__init__(verbose)
         self.checkpoint_path = checkpoint_path
         self.name_prefix = name_prefix
-        self._last_buffer_count = 0
 
     def _on_step(self) -> bool:
-        # Check for new replay buffer files
+        # Check for replay buffer files
         buffer_files = sorted(
             self.checkpoint_path.glob(f"{self.name_prefix}_replay_buffer_*.pkl"),
             key=lambda p: self._get_steps_from_filename(p)
         )
 
-        # Only act if we have more than one buffer file
-        if len(buffer_files) > 1 and len(buffer_files) != self._last_buffer_count:
-            self._last_buffer_count = len(buffer_files)
-
-            # Delete all but the latest
+        # Delete all but the latest replay buffer
+        if len(buffer_files) > 1:
             for old_buffer in buffer_files[:-1]:
                 try:
                     old_buffer.unlink()
