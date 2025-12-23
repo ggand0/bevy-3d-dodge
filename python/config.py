@@ -58,6 +58,9 @@ class TrainingConfig:
     # Frame stacking for image observations (helps CNN infer velocity)
     frame_stack: Optional[int] = None  # Number of frames to stack (e.g., 4). None = no stacking
 
+    # Image observation settings
+    image_grayscale: Optional[bool] = None  # If True, use grayscale (1 channel) instead of RGB (3 channels). None = RGB
+
     # Paths
     save_dir: str = "models"
     log_dir: str = "logs"

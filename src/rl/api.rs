@@ -58,6 +58,7 @@ pub enum EnvCommand {
         thrower_delay_seconds: Option<f32>,
         image_obs_width: Option<u32>,
         image_obs_height: Option<u32>,
+        image_grayscale: Option<bool>,
     },
 }
 
@@ -93,6 +94,7 @@ struct ConfigureRequest {
     thrower_delay_seconds: Option<f32>,  // Delay before thrower indicator spawns projectile
     image_obs_width: Option<u32>,  // Image observation width (default 84)
     image_obs_height: Option<u32>,  // Image observation height (default 84)
+    image_grayscale: Option<bool>,  // If true, use grayscale (1 channel) instead of RGB (3 channels)
 }
 
 #[derive(Serialize)]
@@ -159,9 +161,10 @@ async fn reset_handler(
     // Increased from 50ms to 100ms to give more time for headless mode
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-    // Check observation mode
+    // Check observation mode and image config
     let game_config = state.game_config.lock().await;
     let obs_mode = game_config.observation_mode;
+    let image_size = (game_config.image_obs_width * game_config.image_obs_height * game_config.image_channels()) as usize;
     drop(game_config);
 
     // Read observation and info from shared state (using read lock for concurrent access)
@@ -174,17 +177,19 @@ async fn reset_handler(
 
     // Get image observation if in TopDownImage mode
     let image_observation = if obs_mode == ObservationMode::TopDownImage {
-        let image_bytes = state
+        let image_buffer = state
             .shared_state
             .image_observation
             .read()
-            .await
-            .clone();
+            .await;
+
+        // Only encode the actual image bytes (may be smaller than buffer for grayscale)
+        let image_bytes = &image_buffer[..image_size];
 
         // Pre-allocate base64 buffer to avoid allocation during encoding
         // Base64 expands data by ~4/3, so allocate accordingly
         let mut base64_string = String::with_capacity((image_bytes.len() * 4 / 3) + 4);
-        BASE64.encode_string(&image_bytes, &mut base64_string);
+        BASE64.encode_string(image_bytes, &mut base64_string);
         Some(base64_string)
     } else {
         None
@@ -204,10 +209,11 @@ async fn step_handler(
     State(state): State<ApiState>,
     Json(request): Json<StepRequest>,
 ) -> Result<Json<StepResponse>, AppError> {
-    // Get current action space type and observation mode from config
+    // Get current action space type, observation mode, and image size from config
     let game_config = state.game_config.lock().await;
     let action_space_type = game_config.action_space_type;
     let obs_mode = game_config.observation_mode;
+    let image_size = (game_config.image_obs_width * game_config.image_obs_height * game_config.image_channels()) as usize;
     drop(game_config); // Release lock
 
     // Parse and validate action based on action space type
@@ -306,16 +312,18 @@ async fn step_handler(
 
     // Get image observation if in TopDownImage mode
     let image_observation = if obs_mode == ObservationMode::TopDownImage {
-        let image_bytes = state
+        let image_buffer = state
             .shared_state
             .image_observation
             .read()
-            .await
-            .clone();
+            .await;
+
+        // Only encode the actual image bytes (may be smaller than buffer for grayscale)
+        let image_bytes = &image_buffer[..image_size];
 
         // Pre-allocate base64 buffer to avoid allocation during encoding
         let mut base64_string = String::with_capacity((image_bytes.len() * 4 / 3) + 4);
-        BASE64.encode_string(&image_bytes, &mut base64_string);
+        BASE64.encode_string(image_bytes, &mut base64_string);
         Some(base64_string)
     } else {
         None
@@ -345,7 +353,7 @@ async fn observation_space_handler(
             shape: vec![
                 game_config.image_obs_height as usize,
                 game_config.image_obs_width as usize,
-                IMAGE_OBS_CHANNELS as usize,
+                game_config.image_channels() as usize,  // 1 for grayscale, 3 for RGB
             ],
             dtype: "uint8".to_string(),
             low: 0.0,
@@ -519,6 +527,7 @@ async fn configure_handler(
             thrower_delay_seconds: payload.thrower_delay_seconds,
             image_obs_width: payload.image_obs_width,
             image_obs_height: payload.image_obs_height,
+            image_grayscale: payload.image_grayscale,
         })
         .map_err(|_| AppError::InternalError("Failed to send configure command".to_string()))?;
 

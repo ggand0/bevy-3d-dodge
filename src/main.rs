@@ -924,7 +924,7 @@ fn handle_rl_commands(
                 // Increment step counter
                 env_state.episode_steps += 1;
             }
-            EnvCommand::Configure { level: level_num, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds, image_obs_width, image_obs_height } => {
+            EnvCommand::Configure { level: level_num, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds, image_obs_width, image_obs_height, image_grayscale } => {
                 // Update level if provided
                 if let Some(level_num) = level_num {
                     let new_level = match level_num {
@@ -999,6 +999,12 @@ fn handle_rl_commands(
                 if let Some(height) = image_obs_height {
                     config.image_obs_height = height;
                     info!("Image observation height set to: {}", height);
+                }
+
+                // Update image_grayscale if provided
+                if let Some(grayscale) = image_grayscale {
+                    config.image_grayscale = grayscale;
+                    info!("Image grayscale mode set to: {}", grayscale);
                 }
 
                 // Sync shared config for API server
@@ -1119,6 +1125,7 @@ fn update_rl_state(
             24.0, // Arena size
             game_config.image_obs_width,
             game_config.image_obs_height,
+            game_config.image_grayscale,
         );
         drop(image_buffer); // Release lock explicitly
     }
@@ -1249,7 +1256,7 @@ fn handle_rl_commands_headless(
                 }
                 env_state.episode_steps += 1;
             }
-            EnvCommand::Configure { level: level_num, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds, image_obs_width, image_obs_height } => {
+            EnvCommand::Configure { level: level_num, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds, image_obs_width, image_obs_height, image_grayscale } => {
                 if let Some(level_num) = level_num {
                     let new_level = match level_num {
                         1 => Level::Level1,
@@ -1319,6 +1326,12 @@ fn handle_rl_commands_headless(
                 if let Some(height) = image_obs_height {
                     config.image_obs_height = height;
                     info!("Image observation height set to: {}", height);
+                }
+
+                // Update image_grayscale if provided
+                if let Some(grayscale) = image_grayscale {
+                    config.image_grayscale = grayscale;
+                    info!("Image grayscale mode set to: {}", grayscale);
                 }
 
                 let mut shared = shared_config.0.blocking_lock();

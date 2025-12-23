@@ -291,6 +291,7 @@ def train(
     spawn_angle_degrees = getattr(config, 'spawn_angle_degrees', None)
     observation_mode = getattr(config, 'observation_mode', None)
     thrower_delay_seconds = getattr(config, 'thrower_delay_seconds', None)
+    image_grayscale = getattr(config, 'image_grayscale', None)
 
     config_parts = [f"{level_name}", f"action space: {action_space_type}"]
     if sprint_multiplier is not None:
@@ -301,6 +302,8 @@ def train(
         config_parts.append(f"obs: {observation_mode}")
     if thrower_delay_seconds is not None:
         config_parts.append(f"thrower delay: {thrower_delay_seconds}s")
+    if image_grayscale is not None:
+        config_parts.append(f"grayscale: {image_grayscale}")
     print(f"Configuring game: {', '.join(config_parts)}...")
 
     temp_env.configure(
@@ -310,6 +313,7 @@ def train(
         spawn_angle_degrees=spawn_angle_degrees,
         observation_mode=observation_mode,
         thrower_delay_seconds=thrower_delay_seconds,
+        image_grayscale=image_grayscale,
     )
     print(f"✓ Game configured: {', '.join(config_parts)}")
 

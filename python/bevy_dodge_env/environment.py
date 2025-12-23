@@ -231,6 +231,7 @@ class BevyDodgeEnv(gym.Env):
         spawn_angle_degrees: Optional[float] = None,
         observation_mode: Optional[str] = None,
         thrower_delay_seconds: Optional[float] = None,
+        image_grayscale: Optional[bool] = None,
     ) -> None:
         """Configure game settings.
 
@@ -239,8 +240,9 @@ class BevyDodgeEnv(gym.Env):
             action_space_type: Optional action space type ("discrete", "basic_3d", etc.)
             sprint_multiplier: Optional sprint speed multiplier (e.g., 2.0 = 3x speed at full sprint)
             spawn_angle_degrees: Optional half-angle for spawn fan (e.g., 30 = ±30° = 60° total)
-            observation_mode: Optional observation mode ("standard" for 65-dim, "with_thrower" for 69-dim, "topdown" for 256x256 RGB image)
+            observation_mode: Optional observation mode ("standard" for 65-dim, "with_thrower" for 69-dim, "topdown" for 84x84 image)
             thrower_delay_seconds: Optional delay before thrower indicator spawns projectile
+            image_grayscale: Optional grayscale mode (True for 1 channel, False for 3 RGB channels)
 
         Note:
             - This is the preferred way to configure the game before training
@@ -254,7 +256,7 @@ class BevyDodgeEnv(gym.Env):
             >>> env.configure(action_space_type="basic_3d", sprint_multiplier=2.0, spawn_angle_degrees=30)
             >>> env.reset()  # Ensures config is synced
         """
-        if all(p is None for p in [level, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds]):
+        if all(p is None for p in [level, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds, image_grayscale]):
             raise ValueError("At least one configuration parameter must be provided")
 
         if level is not None and level not in (1, 2):
@@ -288,6 +290,8 @@ class BevyDodgeEnv(gym.Env):
             config_data["observation_mode"] = observation_mode
         if thrower_delay_seconds is not None:
             config_data["thrower_delay_seconds"] = thrower_delay_seconds
+        if image_grayscale is not None:
+            config_data["image_grayscale"] = image_grayscale
 
         try:
             response = requests.post(

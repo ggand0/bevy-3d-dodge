@@ -202,9 +202,15 @@ pub struct GameConfig {
     pub thrower_delay_seconds: f32,  // Delay before thrower indicator spawns projectile
     pub image_obs_width: u32,   // Image observation width (default 84, Atari-standard)
     pub image_obs_height: u32,  // Image observation height (default 84, Atari-standard)
+    pub image_grayscale: bool,  // If true, use grayscale (1 channel) instead of RGB (3 channels)
 }
 
 impl GameConfig {
+    /// Get the number of image channels based on grayscale setting
+    pub fn image_channels(&self) -> u32 {
+        if self.image_grayscale { 1 } else { 3 }
+    }
+
     /// Create config for a specific level
     pub fn for_level(level: Level) -> Self {
         match level {
@@ -232,6 +238,7 @@ impl GameConfig {
             thrower_delay_seconds: 0.5,  // 0.5 second warning before throw
             image_obs_width: IMAGE_OBS_WIDTH,
             image_obs_height: IMAGE_OBS_HEIGHT,
+            image_grayscale: false,  // RGB by default
         }
     }
 
@@ -253,6 +260,7 @@ impl GameConfig {
             thrower_delay_seconds: 0.5,  // Must equal spawn_interval for same arrival rate
             image_obs_width: IMAGE_OBS_WIDTH,
             image_obs_height: IMAGE_OBS_HEIGHT,
+            image_grayscale: false,  // RGB by default
         }
     }
 }
