@@ -49,11 +49,10 @@ pub fn calculate_reward(
     // Base survival reward
     let mut reward = 1.0;
 
-    // Optional: Dodge bonus for close calls
     if let Ok(player_transform) = player_query.get_single() {
         let player_pos = player_transform.translation;
 
-        // Find closest projectile
+        // Find closest projectile for dodge bonus
         let min_distance = projectile_query
             .iter()
             .map(|proj_transform| {

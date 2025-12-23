@@ -104,7 +104,7 @@ fn setup_projectile_timer(mut commands: Commands, config: Res<GameConfig>) {
     });
 }
 
-/// Spawn projectiles directly (Standard observation mode only)
+/// Spawn projectiles directly (Standard and TopDownImage modes)
 fn spawn_projectiles(
     mut commands: Commands,
     mut timer: ResMut<ProjectileSpawnTimer>,
@@ -114,8 +114,9 @@ fn spawn_projectiles(
     config: Res<GameConfig>,
     player_query: Query<&Transform, With<Player>>,
 ) {
-    // Only spawn directly in Standard mode
-    if config.observation_mode != ObservationMode::Standard {
+    // Spawn directly in Standard and TopDownImage modes
+    // WithThrowerIndicator mode uses spawn_thrower_indicators instead
+    if config.observation_mode == ObservationMode::WithThrowerIndicator {
         return;
     }
 
@@ -216,7 +217,8 @@ fn process_thrower_indicators(
     }
 }
 
-/// Spawn projectiles without rendering components (for headless mode, Standard mode only)
+/// Spawn projectiles without rendering components (for headless mode)
+/// Runs in Standard and TopDownImage modes (not WithThrowerIndicator which uses indicators)
 fn spawn_projectiles_headless(
     mut commands: Commands,
     mut timer: ResMut<ProjectileSpawnTimer>,
@@ -224,8 +226,9 @@ fn spawn_projectiles_headless(
     config: Res<GameConfig>,
     player_query: Query<&Transform, With<Player>>,
 ) {
-    // Only spawn directly in Standard mode
-    if config.observation_mode != ObservationMode::Standard {
+    // Spawn directly in Standard and TopDownImage modes
+    // WithThrowerIndicator mode uses spawn_thrower_indicators_headless instead
+    if config.observation_mode == ObservationMode::WithThrowerIndicator {
         return;
     }
 

@@ -8,7 +8,7 @@ use axum::{
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::config::{IMAGE_OBS_WIDTH, IMAGE_OBS_HEIGHT, IMAGE_OBS_CHANNELS, ObservationMode};
@@ -17,25 +17,25 @@ use crate::rl::observation::OBSERVATION_SIZE;
 /// Shared state between Axum server and Bevy game loop
 #[derive(Clone, bevy::prelude::Resource)]
 pub struct SharedEnvState {
-    pub observation: Arc<Mutex<Vec<f32>>>,
-    pub image_observation: Arc<Mutex<Vec<u8>>>,  // RGB image bytes for TopDownImage mode
-    pub reward: Arc<Mutex<f32>>,
-    pub done: Arc<Mutex<bool>>,
-    pub truncated: Arc<Mutex<bool>>,
-    pub info: Arc<Mutex<std::collections::HashMap<String, serde_json::Value>>>,
+    pub observation: Arc<RwLock<Vec<f32>>>,
+    pub image_observation: Arc<RwLock<Vec<u8>>>,  // RGB image bytes for TopDownImage mode
+    pub reward: Arc<RwLock<f32>>,
+    pub done: Arc<RwLock<bool>>,
+    pub truncated: Arc<RwLock<bool>>,
+    pub info: Arc<RwLock<std::collections::HashMap<String, serde_json::Value>>>,
 }
 
-// Note: These are tokio::sync::Mutex, not std::sync::Mutex
+// Note: These are tokio::sync::RwLock, not std::sync::RwLock
 
 impl Default for SharedEnvState {
     fn default() -> Self {
         Self {
-            observation: Arc::new(Mutex::new(vec![0.0; OBSERVATION_SIZE])),
-            image_observation: Arc::new(Mutex::new(vec![0u8; (IMAGE_OBS_WIDTH * IMAGE_OBS_HEIGHT * IMAGE_OBS_CHANNELS) as usize])),
-            reward: Arc::new(Mutex::new(0.0)),
-            done: Arc::new(Mutex::new(false)),
-            truncated: Arc::new(Mutex::new(false)),
-            info: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            observation: Arc::new(RwLock::new(vec![0.0; OBSERVATION_SIZE])),
+            image_observation: Arc::new(RwLock::new(vec![0u8; (IMAGE_OBS_WIDTH * IMAGE_OBS_HEIGHT * IMAGE_OBS_CHANNELS) as usize])),
+            reward: Arc::new(RwLock::new(0.0)),
+            done: Arc::new(RwLock::new(false)),
+            truncated: Arc::new(RwLock::new(false)),
+            info: Arc::new(RwLock::new(std::collections::HashMap::new())),
         }
     }
 }
@@ -152,18 +152,19 @@ async fn reset_handler(
         .map_err(|_| AppError::InternalError("Failed to send reset command".to_string()))?;
 
     // Wait a bit for game loop to process reset (simple synchronization)
-    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+    // Increased from 50ms to 100ms to give more time for headless mode
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Check observation mode
     let game_config = state.game_config.lock().await;
     let obs_mode = game_config.observation_mode;
     drop(game_config);
 
-    // Read observation and info from shared state
+    // Read observation and info from shared state (using read lock for concurrent access)
     let observation = state
         .shared_state
         .observation
-        .lock()
+        .read()
         .await
         .clone();
 
@@ -172,10 +173,15 @@ async fn reset_handler(
         let image_bytes = state
             .shared_state
             .image_observation
-            .lock()
+            .read()
             .await
             .clone();
-        Some(BASE64.encode(&image_bytes))
+
+        // Pre-allocate base64 buffer to avoid allocation during encoding
+        // Base64 expands data by ~4/3, so allocate accordingly
+        let mut base64_string = String::with_capacity((image_bytes.len() * 4 / 3) + 4);
+        BASE64.encode_string(&image_bytes, &mut base64_string);
+        Some(base64_string)
     } else {
         None
     };
@@ -183,7 +189,7 @@ async fn reset_handler(
     let info = state
         .shared_state
         .info
-        .lock()
+        .read()
         .await
         .clone();
 
@@ -261,36 +267,36 @@ async fn step_handler(
     // Wait a bit for game loop to process step (simple synchronization)
     tokio::time::sleep(tokio::time::Duration::from_millis(16)).await; // ~60 FPS
 
-    // Read state from shared state
+    // Read state from shared state (using read locks for concurrent access)
     let observation = state
         .shared_state
         .observation
-        .lock()
+        .read()
         .await
         .clone();
 
     let reward = *state
         .shared_state
         .reward
-        .lock()
+        .read()
         .await;
 
     let done = *state
         .shared_state
         .done
-        .lock()
+        .read()
         .await;
 
     let truncated = *state
         .shared_state
         .truncated
-        .lock()
+        .read()
         .await;
 
     let info = state
         .shared_state
         .info
-        .lock()
+        .read()
         .await
         .clone();
 
@@ -299,10 +305,14 @@ async fn step_handler(
         let image_bytes = state
             .shared_state
             .image_observation
-            .lock()
+            .read()
             .await
             .clone();
-        Some(BASE64.encode(&image_bytes))
+
+        // Pre-allocate base64 buffer to avoid allocation during encoding
+        let mut base64_string = String::with_capacity((image_bytes.len() * 4 / 3) + 4);
+        BASE64.encode_string(&image_bytes, &mut base64_string);
+        Some(base64_string)
     } else {
         None
     };

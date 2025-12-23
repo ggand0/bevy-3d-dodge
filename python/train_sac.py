@@ -19,13 +19,64 @@ import gymnasium as gym
 import matplotlib.pyplot as plt
 import numpy as np
 from stable_baselines3 import SAC
-from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
+from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback, BaseCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage
 from tensorboard.backend.event_processing import event_accumulator
 
 from bevy_dodge_env import BevyDodgeEnv
 from config import TrainingConfig
+
+
+class CleanupReplayBufferCallback(BaseCallback):
+    """Callback that deletes old replay buffer files after checkpoints.
+
+    Keeps only the latest replay buffer to prevent disk space exhaustion,
+    especially important for CNN training with large image observations.
+    """
+
+    def __init__(self, checkpoint_path: Path, name_prefix: str = "sac_dodge", verbose: int = 0):
+        super().__init__(verbose)
+        self.checkpoint_path = checkpoint_path
+        self.name_prefix = name_prefix
+        self._last_buffer_count = 0
+
+    def _on_step(self) -> bool:
+        # Check for new replay buffer files
+        buffer_files = sorted(
+            self.checkpoint_path.glob(f"{self.name_prefix}_replay_buffer_*.pkl"),
+            key=lambda p: self._get_steps_from_filename(p)
+        )
+
+        # Only act if we have more than one buffer file
+        if len(buffer_files) > 1 and len(buffer_files) != self._last_buffer_count:
+            self._last_buffer_count = len(buffer_files)
+
+            # Delete all but the latest
+            for old_buffer in buffer_files[:-1]:
+                try:
+                    old_buffer.unlink()
+                    if self.verbose > 0:
+                        print(f"🗑 Deleted old replay buffer: {old_buffer.name}")
+                except OSError as e:
+                    if self.verbose > 0:
+                        print(f"⚠ Failed to delete {old_buffer.name}: {e}")
+
+        return True
+
+    @staticmethod
+    def _get_steps_from_filename(path: Path) -> int:
+        """Extract step number from filename like 'sac_dodge_replay_buffer_50000_steps.pkl'."""
+        try:
+            # sac_dodge_replay_buffer_50000_steps.pkl -> 50000
+            parts = path.stem.split("_")
+            # Find the part that's a number before "steps"
+            for i, part in enumerate(parts):
+                if part == "steps" and i > 0:
+                    return int(parts[i - 1])
+            return 0
+        except (IndexError, ValueError):
+            return 0
 
 
 def make_env(port: int) -> gym.Env:
@@ -310,13 +361,21 @@ def train(
             final_model = save_path / "final_model.zip"
 
             model_to_load = None
-            # Prioritize latest checkpoint over final_model
-            if checkpoint_dir.exists():
-                checkpoints = sorted(checkpoint_dir.glob("sac_dodge_*.zip"))
-                if checkpoints:
-                    model_to_load = checkpoints[-1]
-            if model_to_load is None and final_model.exists():
+            # Prioritize final_model (represents completed training), fall back to checkpoints
+            if final_model.exists():
                 model_to_load = final_model
+            elif checkpoint_dir.exists():
+                checkpoints = list(checkpoint_dir.glob("sac_dodge_*.zip"))
+                if checkpoints:
+                    # Sort by step number numerically (extract from filename)
+                    def get_steps(p: Path) -> int:
+                        # sac_dodge_125379_steps.zip -> 125379
+                        try:
+                            return int(p.stem.split("_")[2])
+                        except (IndexError, ValueError):
+                            return 0
+                    checkpoints.sort(key=get_steps)
+                    model_to_load = checkpoints[-1]
 
         if model_to_load is None:
             print("Error: No model found to resume from")
@@ -379,7 +438,14 @@ def train(
         n_eval_episodes=config.n_eval_episodes,
     )
 
-    callbacks = [checkpoint_callback, eval_callback]
+    # Cleanup callback to delete old replay buffers (saves disk space for CNN training)
+    cleanup_callback = CleanupReplayBufferCallback(
+        checkpoint_path=save_path / "checkpoints",
+        name_prefix="sac_dodge",
+        verbose=1,
+    )
+
+    callbacks = [checkpoint_callback, eval_callback, cleanup_callback]
 
     # Save config to run directory for reproducibility (only on new runs)
     if not resume_path:

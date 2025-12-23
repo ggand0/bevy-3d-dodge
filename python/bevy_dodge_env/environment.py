@@ -26,12 +26,26 @@ class BevyDodgeEnv(gym.Env):
         self,
         host: str = "127.0.0.1",
         port: int = 8000,
-        timeout: float = 5.0,
+        timeout: float = 30.0,  # Increased from 5.0 for image observations
     ) -> None:
         super().__init__()
 
         self.base_url = f"http://{host}:{port}"
         self.timeout = timeout
+
+        # Use a Session for connection pooling and keep-alive
+        self._session = requests.Session()
+        # Configure connection adapter with retry capability
+        from urllib3.util.retry import Retry
+        from requests.adapters import HTTPAdapter
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=0.1,
+            status_forcelist=[500, 502, 503, 504],
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy, pool_maxsize=10)
+        self._session.mount("http://", adapter)
+        self._session.mount("https://", adapter)
 
         # Fetch space specifications from Bevy API
         try:
@@ -298,23 +312,52 @@ class BevyDodgeEnv(gym.Env):
         except Exception:
             # Ignore errors during cleanup
             pass
+        finally:
+            # Close the HTTP session
+            try:
+                self._session.close()
+            except Exception:
+                pass
 
-    def _post(self, url: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Send POST request to API.
+    def _post(self, url: str, data: Dict[str, Any], max_retries: int = 3) -> Dict[str, Any]:
+        """Send POST request to API with retry logic.
 
         Args:
             url: Full URL to send request to
             data: JSON data to send
+            max_retries: Maximum number of retry attempts for transient errors
 
         Returns:
             Response JSON as dictionary
 
         Raises:
-            requests.exceptions.RequestException: On network/HTTP errors
+            requests.exceptions.RequestException: On network/HTTP errors after all retries
         """
-        response = requests.post(url, json=data, timeout=self.timeout)
-        response.raise_for_status()
-        return response.json()
+        import time
+        last_exception = None
+
+        for attempt in range(max_retries):
+            try:
+                response = self._session.post(url, json=data, timeout=self.timeout)
+                response.raise_for_status()
+                return response.json()
+            except (requests.exceptions.ChunkedEncodingError,
+                    requests.exceptions.ConnectionError) as e:
+                last_exception = e
+                if attempt < max_retries - 1:
+                    # Wait briefly before retry (exponential backoff)
+                    wait_time = 0.1 * (2 ** attempt)
+                    print(f"⚠ Connection error (attempt {attempt + 1}/{max_retries}), retrying in {wait_time:.1f}s...")
+                    time.sleep(wait_time)
+                    continue
+                raise
+            except requests.exceptions.RequestException:
+                # Don't retry other types of errors
+                raise
+
+        # Should not reach here, but just in case
+        if last_exception:
+            raise last_exception
 
     def _get(self, url: str) -> Dict[str, Any]:
         """Send GET request to API.
@@ -328,6 +371,6 @@ class BevyDodgeEnv(gym.Env):
         Raises:
             requests.exceptions.RequestException: On network/HTTP errors
         """
-        response = requests.get(url, timeout=self.timeout)
+        response = self._session.get(url, timeout=self.timeout)
         response.raise_for_status()
         return response.json()

@@ -131,6 +131,24 @@ pub fn generate_synthetic_topdown_image(
     let width = IMAGE_OBS_WIDTH as usize;
     let height = IMAGE_OBS_HEIGHT as usize;
     let mut pixels = vec![0u8; width * height * 3]; // RGB
+    generate_synthetic_topdown_image_into(&mut pixels, player_pos, projectile_positions, thrower_pos, arena_size);
+    pixels
+}
+
+/// Generate a synthetic top-down image into an existing buffer (avoids allocation)
+/// This is the in-place version for use in the game loop to reduce memory churn.
+pub fn generate_synthetic_topdown_image_into(
+    pixels: &mut [u8],
+    player_pos: Vec3,
+    projectile_positions: &[(Vec3, Vec3)], // (position, velocity)
+    thrower_pos: Option<Vec3>,
+    arena_size: f32,
+) {
+    let width = IMAGE_OBS_WIDTH as usize;
+    let height = IMAGE_OBS_HEIGHT as usize;
+
+    // Ensure buffer is the right size
+    debug_assert_eq!(pixels.len(), width * height * 3, "Image buffer has wrong size");
 
     let half_arena = arena_size / 2.0;
 
@@ -189,18 +207,16 @@ pub fn generate_synthetic_topdown_image(
 
     // Draw thrower indicator (orange, if present)
     if let Some(thrower) = thrower_pos {
-        draw_circle(&mut pixels, width, height, thrower.x, thrower.y, 0.8, arena_size, [255, 140, 0]);
+        draw_circle(pixels, width, height, thrower.x, thrower.y, 0.8, arena_size, [255, 140, 0]);
     }
 
     // Draw projectiles (red circles)
     for (pos, _vel) in projectile_positions {
-        draw_circle(&mut pixels, width, height, pos.x, pos.y, 0.5, arena_size, [255, 50, 50]);
+        draw_circle(pixels, width, height, pos.x, pos.y, 0.5, arena_size, [255, 50, 50]);
     }
 
     // Draw player (blue circle, slightly larger)
-    draw_circle(&mut pixels, width, height, player_pos.x, player_pos.y, 0.6, arena_size, [50, 150, 255]);
-
-    pixels
+    draw_circle(pixels, width, height, player_pos.x, player_pos.y, 0.6, arena_size, [50, 150, 255]);
 }
 
 /// Helper to draw a filled circle on the image
