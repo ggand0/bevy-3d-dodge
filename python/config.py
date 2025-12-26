@@ -47,6 +47,7 @@ class TrainingConfig:
 
     # Environment
     port: int = 8000
+    n_envs: int = 1  # Number of parallel environments (requires n_envs game servers)
     max_episode_steps: int = 1000
     level: int = 1  # Difficulty level (1 for baseline, 2 for hard)
     action_space_type: str = "discrete"  # Action space type ("discrete", "basic_3d", etc.)

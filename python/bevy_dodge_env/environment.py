@@ -91,6 +91,47 @@ class BevyDodgeEnv(gym.Env):
         else:
             raise ValueError(f"Unsupported action space type: {action_space_info['type']}")
 
+    def refresh_spaces(self) -> None:
+        """Re-query observation and action spaces from the server.
+
+        Call this after configure() to update the spaces to match the new configuration.
+        This is necessary because configure() may change the observation mode or action space type.
+        """
+        obs_space_info = self._get(f"{self.base_url}/observation_space")
+        action_space_info = self._get(f"{self.base_url}/action_space")
+
+        # Update observation space
+        obs_dtype = obs_space_info.get("dtype", "float32")
+        self._is_image_obs = obs_dtype == "uint8"
+
+        if self._is_image_obs:
+            self.observation_space = spaces.Box(
+                low=int(obs_space_info["low"]),
+                high=int(obs_space_info["high"]),
+                shape=tuple(obs_space_info["shape"]),
+                dtype=np.uint8,
+            )
+        else:
+            self.observation_space = spaces.Box(
+                low=obs_space_info["low"],
+                high=obs_space_info["high"],
+                shape=tuple(obs_space_info["shape"]),
+                dtype=np.float32,
+            )
+
+        # Update action space
+        if action_space_info["type"] == "Discrete":
+            self.action_space = spaces.Discrete(action_space_info["n"])
+        elif action_space_info["type"] == "Box":
+            self.action_space = spaces.Box(
+                low=action_space_info["low"],
+                high=action_space_info["high"],
+                shape=tuple(action_space_info["shape"]),
+                dtype=np.float32,
+            )
+        else:
+            raise ValueError(f"Unsupported action space type: {action_space_info['type']}")
+
     def reset(
         self,
         seed: Optional[int] = None,

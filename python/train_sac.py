@@ -25,6 +25,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage, Vec
 from tensorboard.backend.event_processing import event_accumulator
 
 from bevy_dodge_env import BevyDodgeEnv
+from bevy_dodge_env.vec_env import make_vec_env
 from config import TrainingConfig
 
 
@@ -323,8 +324,44 @@ def train(
     print()
 
     # Now create the actual training environment
-    print("Creating training environment with configured action space...")
-    env = DummyVecEnv([lambda: make_env(config.port)])
+    n_envs = getattr(config, 'n_envs', 1)
+
+    if n_envs > 1:
+        # Build config kwargs for parallel environments
+        config_kwargs = {
+            'level': config.level,
+            'action_space_type': action_space_type,
+            'observation_mode': observation_mode,
+        }
+        if sprint_multiplier is not None:
+            config_kwargs['sprint_multiplier'] = sprint_multiplier
+        if spawn_angle_degrees is not None:
+            config_kwargs['spawn_angle_degrees'] = spawn_angle_degrees
+        if thrower_delay_seconds is not None:
+            config_kwargs['thrower_delay_seconds'] = thrower_delay_seconds
+        if image_grayscale is not None:
+            config_kwargs['image_grayscale'] = image_grayscale
+
+        # Pre-configure ALL game servers before creating SubprocVecEnv
+        # This ensures all servers have the same observation/action space
+        print(f"Configuring {n_envs} game servers on ports {config.port}-{config.port + n_envs - 1}...")
+        for i in range(n_envs):
+            port = config.port + i
+            pre_env = BevyDodgeEnv(port=port)
+            pre_env.configure(**config_kwargs)
+            pre_env.reset()
+            pre_env.close()
+            print(f"  ✓ Port {port} configured")
+
+        print(f"Creating {n_envs} parallel environments...")
+        env = make_vec_env(
+            n_envs=n_envs,
+            start_port=config.port,
+            config_kwargs=config_kwargs,
+        )
+    else:
+        print("Creating training environment with configured action space...")
+        env = DummyVecEnv([lambda: make_env(config.port)])
 
     # Detect if using image observations
     is_image_obs = observation_mode == "topdown"
@@ -345,9 +382,13 @@ def train(
     print()
 
     # Enable training mode to prevent accidental keyboard interruptions
-    print("Enabling training mode...")
-    env.envs[0].unwrapped.start_training()
-    print("✓ Training mode enabled - R key disabled, camera controls still available")
+    # (For parallel envs, start_training is called in vec_env.py during init)
+    if n_envs == 1:
+        print("Enabling training mode...")
+        env.envs[0].unwrapped.start_training()
+        print("✓ Training mode enabled - R key disabled, camera controls still available")
+    else:
+        print(f"✓ Training mode enabled for {n_envs} parallel environments")
     print()
 
     # Create evaluation environment
