@@ -11,6 +11,8 @@ from pathlib import Path
 
 import numpy as np
 from stable_baselines3 import SAC
+from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
+from stable_baselines3.common.monitor import Monitor
 
 from bevy_dodge_env import BevyDodgeEnv
 
@@ -27,6 +29,8 @@ def evaluate_agent(
     spawn_angle_degrees: float = None,
     observation_mode: str = None,
     thrower_delay_seconds: float = None,
+    image_grayscale: bool = False,
+    frame_stack: int = None,
 ):
     """Evaluate trained SAC agent.
 
@@ -79,6 +83,10 @@ def evaluate_agent(
         config_parts.append(f"spawn angle: ±{spawn_angle_degrees}°")
     if observation_mode is not None:
         config_parts.append(f"obs: {observation_mode}")
+    if observation_mode == "topdown" and image_grayscale:
+        config_parts.append("grayscale")
+    if frame_stack is not None and frame_stack > 1:
+        config_parts.append(f"frame_stack: {frame_stack}")
     if thrower_delay_seconds is not None:
         config_parts.append(f"thrower delay: {thrower_delay_seconds}s")
     print(f"Configuring Bevy server ({', '.join(config_parts)})...")
@@ -94,6 +102,7 @@ def evaluate_agent(
             spawn_angle_degrees=spawn_angle_degrees,
             observation_mode=observation_mode,
             thrower_delay_seconds=thrower_delay_seconds,
+            image_grayscale=image_grayscale if observation_mode == "topdown" else None,
         )
         temp_env.reset()  # Sync state
     else:
@@ -104,20 +113,36 @@ def evaluate_agent(
             spawn_angle_degrees=spawn_angle_degrees,
             observation_mode=observation_mode,
             thrower_delay_seconds=thrower_delay_seconds,
+            image_grayscale=image_grayscale if observation_mode == "topdown" else None,
         )
         temp_env.reset()
 
     del temp_env
 
     # Create real environment (queries updated action space)
-    env = BevyDodgeEnv(port=port)
-    print(f"✓ Connected to Bevy server at http://127.0.0.1:{port}")
-    print(f"  Observation space: {env.observation_space}")
-    print(f"  Action space: {env.action_space}")
-    print()
+    base_env = BevyDodgeEnv(port=port)
 
     # Enable training mode to hide controls and prevent keyboard interruptions
-    env.start_training()
+    base_env.start_training()
+
+    # Check if we need frame stacking (for CNN models)
+    use_vec_env = frame_stack is not None and frame_stack > 1
+
+    if use_vec_env:
+        # Wrap in DummyVecEnv then VecFrameStack for CNN evaluation
+        env = DummyVecEnv([lambda: Monitor(base_env)])
+        env = VecFrameStack(env, n_stack=frame_stack)
+        print(f"✓ Connected to Bevy server at http://127.0.0.1:{port}")
+        print(f"  Base observation space: {base_env.observation_space}")
+        print(f"  Stacked observation space: {env.observation_space}")
+        print(f"  Action space: {env.action_space}")
+    else:
+        env = base_env
+        print(f"✓ Connected to Bevy server at http://127.0.0.1:{port}")
+        print(f"  Observation space: {env.observation_space}")
+        print(f"  Action space: {env.action_space}")
+
+    print()
     print("✓ Training mode enabled - controls hidden, R key disabled")
     print()
 
@@ -131,7 +156,12 @@ def evaluate_agent(
     print()
 
     for episode in range(n_episodes):
-        obs, info = env.reset()
+        if use_vec_env:
+            # VecEnv API: reset returns just obs
+            obs = env.reset()
+        else:
+            # Gym API: reset returns (obs, info)
+            obs, info = env.reset()
         episode_reward = 0
         episode_length = 0
         done = False
@@ -143,8 +173,15 @@ def evaluate_agent(
             # Get action from model
             action, _states = model.predict(obs, deterministic=deterministic)
 
-            # Step environment
-            obs, reward, done, truncated, info = env.step(action)
+            if use_vec_env:
+                # VecEnv API: step returns (obs, rewards, dones, infos)
+                obs, rewards, dones, infos = env.step(action)
+                reward = rewards[0]
+                done = dones[0]
+                truncated = False  # VecEnv doesn't separate truncated
+            else:
+                # Gym API: step returns (obs, reward, done, truncated, info)
+                obs, reward, done, truncated, info = env.step(action)
 
             episode_reward += reward
             episode_length += 1
@@ -297,9 +334,20 @@ Examples:
     parser.add_argument(
         "--observation-mode",
         type=str,
-        choices=["standard", "with_thrower"],
+        choices=["standard", "with_thrower", "topdown"],
         default=None,
-        help="Observation mode ('standard' for 65-dim, 'with_thrower' for 69-dim). Uses model's trained mode if not specified.",
+        help="Observation mode ('standard' for 65-dim, 'with_thrower' for 69-dim, 'topdown' for 84x84 image). Uses model's trained mode if not specified.",
+    )
+    parser.add_argument(
+        "--image-grayscale",
+        action="store_true",
+        help="Use grayscale images (for topdown mode)",
+    )
+    parser.add_argument(
+        "--frame-stack",
+        type=int,
+        default=None,
+        help="Number of frames to stack (for topdown mode with CNN)",
     )
     parser.add_argument(
         "--thrower-delay",
@@ -340,6 +388,8 @@ Examples:
             spawn_angle_degrees=args.spawn_angle,
             observation_mode=args.observation_mode,
             thrower_delay_seconds=args.thrower_delay,
+            image_grayscale=args.image_grayscale,
+            frame_stack=args.frame_stack,
         )
 
         # Print summary
