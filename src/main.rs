@@ -1185,6 +1185,8 @@ fn update_rl_state(
     *shared_state.done.blocking_write() = done;
     *shared_state.truncated.blocking_write() = truncated;
     *shared_state.info.blocking_write() = info;
+    // Increment step counter to signal new observation is ready
+    *shared_state.step_counter.blocking_write() += 1;
 }
 
 /// Handle RL API commands in headless mode (no materials/rendering)

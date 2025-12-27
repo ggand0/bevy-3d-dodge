@@ -23,6 +23,7 @@ pub struct SharedEnvState {
     pub done: Arc<RwLock<bool>>,
     pub truncated: Arc<RwLock<bool>>,
     pub info: Arc<RwLock<std::collections::HashMap<String, serde_json::Value>>>,
+    pub step_counter: Arc<RwLock<u64>>,  // Incremented after each step for sync
 }
 
 // Note: These are tokio::sync::RwLock, not std::sync::RwLock
@@ -36,6 +37,7 @@ impl Default for SharedEnvState {
             done: Arc::new(RwLock::new(false)),
             truncated: Arc::new(RwLock::new(false)),
             info: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            step_counter: Arc::new(RwLock::new(0)),
         }
     }
 }

@@ -108,8 +108,8 @@ impl RlEnvironment for GrpcEnvService {
             .send(EnvCommand::Reset)
             .map_err(|_| Status::internal("Failed to send reset command"))?;
 
-        // Wait for game loop to process reset
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        // Wait for game loop to process reset (reduced for higher throughput)
+        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
 
         // Get observation mode and image size
         let game_config = self.game_config.lock().await;
@@ -211,13 +211,26 @@ impl RlEnvironment for GrpcEnvService {
             }
         };
 
+        // Get current step counter
+        let current_step = *self.shared_state.step_counter.read().await;
+
         // Send step command to game loop
         self.command_tx
             .send(command)
             .map_err(|_| Status::internal("Failed to send step command"))?;
 
-        // Wait for game loop to process step (~60 FPS)
-        tokio::time::sleep(tokio::time::Duration::from_millis(16)).await;
+        // Wait for step counter to increment (max 100ms timeout)
+        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_millis(100);
+        loop {
+            let new_step = *self.shared_state.step_counter.read().await;
+            if new_step > current_step {
+                break;
+            }
+            if tokio::time::Instant::now() >= deadline {
+                break; // Timeout - return current state
+            }
+            tokio::task::yield_now().await;
+        }
 
         // Read state from shared state
         let observation = self.shared_state.observation.read().await.clone();
