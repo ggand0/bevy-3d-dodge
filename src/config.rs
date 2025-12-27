@@ -103,7 +103,19 @@ pub enum ObservationMode {
     Standard,
     /// Extended 69-dim observation with thrower indicator info
     WithThrowerIndicator,
+    /// Top-down rendered image (256x256 RGB)
+    TopDownImage,
 }
+
+/// Image observation configuration - default values (256x256 for accurate projection)
+pub const IMAGE_OBS_WIDTH: u32 = 256;
+pub const IMAGE_OBS_HEIGHT: u32 = 256;
+pub const IMAGE_OBS_CHANNELS: u32 = 3;  // RGB
+
+/// Entity radii for physics and rendering (single source of truth)
+pub const PLAYER_RADIUS: f32 = 0.5;
+pub const PROJECTILE_RADIUS: f32 = 0.3;
+pub const THROWER_INDICATOR_RADIUS: f32 = 0.2;
 
 impl ObservationMode {
     /// Parse from string (for API)
@@ -111,15 +123,22 @@ impl ObservationMode {
         match s.to_lowercase().as_str() {
             "standard" | "default" => Some(Self::Standard),
             "with_thrower" | "thrower" | "with_thrower_indicator" => Some(Self::WithThrowerIndicator),
+            "topdown" | "topdown_image" | "image" => Some(Self::TopDownImage),
             _ => None,
         }
     }
 
-    /// Get observation size for this mode
+    /// Check if this mode uses image observations
+    pub fn is_image_mode(&self) -> bool {
+        matches!(self, Self::TopDownImage)
+    }
+
+    /// Get observation size for vector modes (returns 0 for image mode)
     pub fn observation_size(&self) -> usize {
         match self {
             Self::Standard => 65,
             Self::WithThrowerIndicator => 69,
+            Self::TopDownImage => 0,  // Image mode doesn't use vector size
         }
     }
 }
@@ -178,9 +197,17 @@ pub struct GameConfig {
     pub spawn_angle_degrees: f32,  // Half-angle for spawn fan in degrees (e.g., 60 = ±60° = 120° total)
     pub observation_mode: ObservationMode,  // Standard (65-dim) or WithThrowerIndicator (69-dim)
     pub thrower_delay_seconds: f32,  // Delay before thrower indicator spawns projectile
+    pub image_obs_width: u32,   // Image observation width (default 84, Atari-standard)
+    pub image_obs_height: u32,  // Image observation height (default 84, Atari-standard)
+    pub image_grayscale: bool,  // If true, use grayscale (1 channel) instead of RGB (3 channels)
 }
 
 impl GameConfig {
+    /// Get the number of image channels based on grayscale setting
+    pub fn image_channels(&self) -> u32 {
+        if self.image_grayscale { 1 } else { 3 }
+    }
+
     /// Create config for a specific level
     pub fn for_level(level: Level) -> Self {
         match level {
@@ -206,6 +233,9 @@ impl GameConfig {
             spawn_angle_degrees: 60.0,  // ±60° = 120° total fan (not used when random_spawn_position=false)
             observation_mode: ObservationMode::default(),  // Standard 65-dim
             thrower_delay_seconds: 0.5,  // 0.5 second warning before throw
+            image_obs_width: IMAGE_OBS_WIDTH,
+            image_obs_height: IMAGE_OBS_HEIGHT,
+            image_grayscale: false,  // RGB by default
         }
     }
 
@@ -225,6 +255,9 @@ impl GameConfig {
             spawn_angle_degrees: 60.0,  // ±60° = 120° total fan
             observation_mode: ObservationMode::default(),  // Standard 65-dim
             thrower_delay_seconds: 0.5,  // Must equal spawn_interval for same arrival rate
+            image_obs_width: IMAGE_OBS_WIDTH,
+            image_obs_height: IMAGE_OBS_HEIGHT,
+            image_grayscale: false,  // RGB by default
         }
     }
 }

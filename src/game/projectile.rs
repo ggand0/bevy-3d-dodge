@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::config::{GameConfig, ObservationMode};
+use crate::config::{GameConfig, ObservationMode, PROJECTILE_RADIUS, THROWER_INDICATOR_RADIUS};
 use crate::game::player::Player;
 
 #[derive(Component)]
@@ -104,7 +104,7 @@ fn setup_projectile_timer(mut commands: Commands, config: Res<GameConfig>) {
     });
 }
 
-/// Spawn projectiles directly (Standard observation mode only)
+/// Spawn projectiles directly (Standard and TopDownImage modes)
 fn spawn_projectiles(
     mut commands: Commands,
     mut timer: ResMut<ProjectileSpawnTimer>,
@@ -114,8 +114,9 @@ fn spawn_projectiles(
     config: Res<GameConfig>,
     player_query: Query<&Transform, With<Player>>,
 ) {
-    // Only spawn directly in Standard mode
-    if config.observation_mode != ObservationMode::Standard {
+    // Spawn directly in Standard and TopDownImage modes
+    // WithThrowerIndicator mode uses spawn_thrower_indicators instead
+    if config.observation_mode == ObservationMode::WithThrowerIndicator {
         return;
     }
 
@@ -126,7 +127,7 @@ fn spawn_projectiles(
             let (spawn_pos, spawn_vel) = compute_projectile_spawn(&config, player_transform.translation);
 
             commands.spawn((
-                Mesh3d(meshes.add(Sphere::new(0.3))),
+                Mesh3d(meshes.add(Sphere::new(PROJECTILE_RADIUS))),
                 MeshMaterial3d(materials.add(StandardMaterial {
                     base_color: Color::srgb(0.9, 0.2, 0.2),
                     perceptual_roughness: 0.3,
@@ -164,7 +165,7 @@ fn spawn_thrower_indicators(
             let (spawn_pos, spawn_vel) = compute_projectile_spawn(&config, player_transform.translation);
 
             commands.spawn((
-                Mesh3d(meshes.add(Sphere::new(0.2))),
+                Mesh3d(meshes.add(Sphere::new(THROWER_INDICATOR_RADIUS))),
                 MeshMaterial3d(materials.add(StandardMaterial {
                     base_color: Color::srgb(1.0, 0.5, 0.0), // Orange indicator
                     emissive: LinearRgba::new(1.0, 0.3, 0.0, 1.0), // Glowing
@@ -197,7 +198,7 @@ fn process_thrower_indicators(
         if indicator.spawn_timer.just_finished() {
             // Spawn the projectile
             commands.spawn((
-                Mesh3d(meshes.add(Sphere::new(0.3))),
+                Mesh3d(meshes.add(Sphere::new(PROJECTILE_RADIUS))),
                 MeshMaterial3d(materials.add(StandardMaterial {
                     base_color: Color::srgb(0.9, 0.2, 0.2),
                     perceptual_roughness: 0.3,
@@ -216,7 +217,8 @@ fn process_thrower_indicators(
     }
 }
 
-/// Spawn projectiles without rendering components (for headless mode, Standard mode only)
+/// Spawn projectiles without rendering components (for headless mode)
+/// Runs in Standard and TopDownImage modes (not WithThrowerIndicator which uses indicators)
 fn spawn_projectiles_headless(
     mut commands: Commands,
     mut timer: ResMut<ProjectileSpawnTimer>,
@@ -224,8 +226,9 @@ fn spawn_projectiles_headless(
     config: Res<GameConfig>,
     player_query: Query<&Transform, With<Player>>,
 ) {
-    // Only spawn directly in Standard mode
-    if config.observation_mode != ObservationMode::Standard {
+    // Spawn directly in Standard and TopDownImage modes
+    // WithThrowerIndicator mode uses spawn_thrower_indicators_headless instead
+    if config.observation_mode == ObservationMode::WithThrowerIndicator {
         return;
     }
 
@@ -307,7 +310,7 @@ fn move_projectiles(
 ) {
     let gravity = 9.8;
     let dt = time.delta_secs();
-    let ground_level = 0.3; // Sphere radius to keep ball on surface
+    let ground_level = PROJECTILE_RADIUS; // Sphere radius to keep ball on surface
     let restitution = 0.7; // Bounce coefficient (0.7 = loses 30% energy per bounce)
 
     for (mut transform, mut velocity) in query.iter_mut() {

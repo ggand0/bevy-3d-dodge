@@ -47,6 +47,7 @@ class TrainingConfig:
 
     # Environment
     port: int = 8000
+    n_envs: int = 1  # Number of parallel environments (requires n_envs game servers)
     max_episode_steps: int = 1000
     level: int = 1  # Difficulty level (1 for baseline, 2 for hard)
     action_space_type: str = "discrete"  # Action space type ("discrete", "basic_3d", etc.)
@@ -54,6 +55,12 @@ class TrainingConfig:
     spawn_angle_degrees: Optional[float] = None  # Half-angle for spawn fan (e.g., 30 = ±30°). None = use level default
     observation_mode: Optional[str] = None  # "standard" (65-dim) or "with_thrower" (69-dim). None = use level default
     thrower_delay_seconds: Optional[float] = None  # Delay before thrower spawns projectile. None = use level default
+
+    # Frame stacking for image observations (helps CNN infer velocity)
+    frame_stack: Optional[int] = None  # Number of frames to stack (e.g., 4). None = no stacking
+
+    # Image observation settings
+    image_grayscale: Optional[bool] = None  # If True, use grayscale (1 channel) instead of RGB (3 channels). None = RGB
 
     # Paths
     save_dir: str = "models"

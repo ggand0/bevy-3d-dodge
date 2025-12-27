@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use crate::config::{PLAYER_RADIUS, PROJECTILE_RADIUS};
 use crate::game::player::Player;
 use crate::game::projectile::Projectile;
 
@@ -47,8 +48,8 @@ fn detect_collisions(
                 .translation
                 .distance(projectile_transform.translation);
 
-            // Collision threshold: player radius (0.5) + projectile radius (0.3)
-            if distance < 0.8 {
+            // Collision threshold: player radius + projectile radius
+            if distance < PLAYER_RADIUS + PROJECTILE_RADIUS {
                 collision_events.send(CollisionEvent);
             }
         }

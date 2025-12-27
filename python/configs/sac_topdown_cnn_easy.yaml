@@ -1,0 +1,41 @@
+# SAC with Top-Down Image Observations - Easy Difficulty
+# Starts with Level 1 settings for CNN learning
+# Usage: python python/train_sac.py --config python/configs/sac_topdown_cnn_easy.yaml
+
+algorithm: SAC
+port: 8000
+level: 1  # Level 1 (Baseline) - slower projectiles, easier to learn
+action_space_type: basic_3d  # 3D: [vx, vy, sprint]
+
+# Image observation mode
+observation_mode: topdown  # 256x256 RGB top-down view
+
+# Level 1 uses fixed spawn direction (from +Y), no random positions
+# This is easier to learn than Level 2's random spawn angles
+
+# Training
+total_timesteps: 500000   # 500K steps
+learning_rate: 0.0003     # SAC default
+
+# SAC-specific parameters
+buffer_size: 50000        # Reduced for 256x256 images (~24GB RAM)
+learning_starts: 5000     # Start learning earlier to see progress
+batch_size: 64            # Smaller batch for GPU memory
+tau: 0.005                # Soft update coefficient
+train_freq: 1             # Update every step
+gradient_steps: 1         # Gradient steps per step
+ent_coef: auto            # Automatic entropy tuning
+
+# Common parameters
+gamma: 0.99               # Discount factor
+
+# Network architecture
+net_arch: [256, 256]      # MLP layers after CNN features
+
+# Checkpointing & Evaluation
+save_freq: 50000          # Save every 50K steps
+eval_freq: 10000          # Evaluate every 10K steps
+n_eval_episodes: 5        # Eval episodes
+
+# Device
+device: auto

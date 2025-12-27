@@ -1,5 +1,6 @@
 """Gymnasium environment for Bevy 3D dodge game."""
 
+import base64
 from typing import Any, Dict, Optional, Tuple
 
 import gymnasium as gym
@@ -25,12 +26,26 @@ class BevyDodgeEnv(gym.Env):
         self,
         host: str = "127.0.0.1",
         port: int = 8000,
-        timeout: float = 5.0,
+        timeout: float = 30.0,  # Increased from 5.0 for image observations
     ) -> None:
         super().__init__()
 
         self.base_url = f"http://{host}:{port}"
         self.timeout = timeout
+
+        # Use a Session for connection pooling and keep-alive
+        self._session = requests.Session()
+        # Configure connection adapter with retry capability
+        from urllib3.util.retry import Retry
+        from requests.adapters import HTTPAdapter
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=0.1,
+            status_forcelist=[500, 502, 503, 504],
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy, pool_maxsize=10)
+        self._session.mount("http://", adapter)
+        self._session.mount("https://", adapter)
 
         # Fetch space specifications from Bevy API
         try:
@@ -42,15 +57,69 @@ class BevyDodgeEnv(gym.Env):
                 f"Make sure the game is running. Error: {e}"
             ) from e
 
-        # Define observation space
-        self.observation_space = spaces.Box(
-            low=obs_space_info["low"],
-            high=obs_space_info["high"],
-            shape=tuple(obs_space_info["shape"]),
-            dtype=np.float32,
-        )
+        # Define observation space - check dtype for image vs vector observations
+        obs_dtype = obs_space_info.get("dtype", "float32")
+        self._is_image_obs = obs_dtype == "uint8"
+
+        if self._is_image_obs:
+            # Image observation: (height, width, channels) with uint8
+            self.observation_space = spaces.Box(
+                low=int(obs_space_info["low"]),
+                high=int(obs_space_info["high"]),
+                shape=tuple(obs_space_info["shape"]),
+                dtype=np.uint8,
+            )
+        else:
+            # Vector observation: (obs_dim,) with float32
+            self.observation_space = spaces.Box(
+                low=obs_space_info["low"],
+                high=obs_space_info["high"],
+                shape=tuple(obs_space_info["shape"]),
+                dtype=np.float32,
+            )
 
         # Define action space
+        if action_space_info["type"] == "Discrete":
+            self.action_space = spaces.Discrete(action_space_info["n"])
+        elif action_space_info["type"] == "Box":
+            self.action_space = spaces.Box(
+                low=action_space_info["low"],
+                high=action_space_info["high"],
+                shape=tuple(action_space_info["shape"]),
+                dtype=np.float32,
+            )
+        else:
+            raise ValueError(f"Unsupported action space type: {action_space_info['type']}")
+
+    def refresh_spaces(self) -> None:
+        """Re-query observation and action spaces from the server.
+
+        Call this after configure() to update the spaces to match the new configuration.
+        This is necessary because configure() may change the observation mode or action space type.
+        """
+        obs_space_info = self._get(f"{self.base_url}/observation_space")
+        action_space_info = self._get(f"{self.base_url}/action_space")
+
+        # Update observation space
+        obs_dtype = obs_space_info.get("dtype", "float32")
+        self._is_image_obs = obs_dtype == "uint8"
+
+        if self._is_image_obs:
+            self.observation_space = spaces.Box(
+                low=int(obs_space_info["low"]),
+                high=int(obs_space_info["high"]),
+                shape=tuple(obs_space_info["shape"]),
+                dtype=np.uint8,
+            )
+        else:
+            self.observation_space = spaces.Box(
+                low=obs_space_info["low"],
+                high=obs_space_info["high"],
+                shape=tuple(obs_space_info["shape"]),
+                dtype=np.float32,
+            )
+
+        # Update action space
         if action_space_info["type"] == "Discrete":
             self.action_space = spaces.Discrete(action_space_info["n"])
         elif action_space_info["type"] == "Box":
@@ -85,7 +154,16 @@ class BevyDodgeEnv(gym.Env):
         except requests.exceptions.RequestException as e:
             raise RuntimeError(f"Failed to reset environment: {e}") from e
 
-        observation = np.array(response["observation"], dtype=np.float32)
+        # Decode observation based on mode
+        if self._is_image_obs:
+            # Decode base64 image and reshape to (H, W, C)
+            image_bytes = base64.b64decode(response["image_observation"])
+            observation = np.frombuffer(image_bytes, dtype=np.uint8).reshape(
+                self.observation_space.shape
+            )
+        else:
+            observation = np.array(response["observation"], dtype=np.float32)
+
         info = response["info"]
 
         return observation, info
@@ -122,7 +200,16 @@ class BevyDodgeEnv(gym.Env):
         except requests.exceptions.RequestException as e:
             raise RuntimeError(f"Failed to execute step: {e}") from e
 
-        observation = np.array(response["observation"], dtype=np.float32)
+        # Decode observation based on mode
+        if self._is_image_obs:
+            # Decode base64 image and reshape to (H, W, C)
+            image_bytes = base64.b64decode(response["image_observation"])
+            observation = np.frombuffer(image_bytes, dtype=np.uint8).reshape(
+                self.observation_space.shape
+            )
+        else:
+            observation = np.array(response["observation"], dtype=np.float32)
+
         reward = float(response["reward"])
         terminated = bool(response["done"])
         truncated = bool(response.get("truncated", False))
@@ -185,6 +272,7 @@ class BevyDodgeEnv(gym.Env):
         spawn_angle_degrees: Optional[float] = None,
         observation_mode: Optional[str] = None,
         thrower_delay_seconds: Optional[float] = None,
+        image_grayscale: Optional[bool] = None,
     ) -> None:
         """Configure game settings.
 
@@ -193,8 +281,9 @@ class BevyDodgeEnv(gym.Env):
             action_space_type: Optional action space type ("discrete", "basic_3d", etc.)
             sprint_multiplier: Optional sprint speed multiplier (e.g., 2.0 = 3x speed at full sprint)
             spawn_angle_degrees: Optional half-angle for spawn fan (e.g., 30 = ±30° = 60° total)
-            observation_mode: Optional observation mode ("standard" for 65-dim, "with_thrower" for 69-dim)
+            observation_mode: Optional observation mode ("standard" for 65-dim, "with_thrower" for 69-dim, "topdown" for image)
             thrower_delay_seconds: Optional delay before thrower indicator spawns projectile
+            image_grayscale: Optional grayscale mode (True for 1 channel, False for 3 RGB channels)
 
         Note:
             - This is the preferred way to configure the game before training
@@ -208,7 +297,7 @@ class BevyDodgeEnv(gym.Env):
             >>> env.configure(action_space_type="basic_3d", sprint_multiplier=2.0, spawn_angle_degrees=30)
             >>> env.reset()  # Ensures config is synced
         """
-        if all(p is None for p in [level, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds]):
+        if all(p is None for p in [level, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds, image_grayscale]):
             raise ValueError("At least one configuration parameter must be provided")
 
         if level is not None and level not in (1, 2):
@@ -220,8 +309,8 @@ class BevyDodgeEnv(gym.Env):
         if spawn_angle_degrees is not None and (spawn_angle_degrees <= 0 or spawn_angle_degrees > 180):
             raise ValueError(f"Invalid spawn_angle_degrees: {spawn_angle_degrees}. Must be between 0 and 180")
 
-        if observation_mode is not None and observation_mode not in ("standard", "with_thrower"):
-            raise ValueError(f"Invalid observation_mode: {observation_mode}. Must be 'standard' or 'with_thrower'")
+        if observation_mode is not None and observation_mode not in ("standard", "with_thrower", "topdown"):
+            raise ValueError(f"Invalid observation_mode: {observation_mode}. Must be 'standard', 'with_thrower', or 'topdown'")
 
         if thrower_delay_seconds is not None and (thrower_delay_seconds <= 0 or thrower_delay_seconds > 10):
             raise ValueError(f"Invalid thrower_delay_seconds: {thrower_delay_seconds}. Must be between 0 and 10")
@@ -242,6 +331,8 @@ class BevyDodgeEnv(gym.Env):
             config_data["observation_mode"] = observation_mode
         if thrower_delay_seconds is not None:
             config_data["thrower_delay_seconds"] = thrower_delay_seconds
+        if image_grayscale is not None:
+            config_data["image_grayscale"] = image_grayscale
 
         try:
             response = requests.post(
@@ -253,6 +344,11 @@ class BevyDodgeEnv(gym.Env):
         except requests.exceptions.RequestException as e:
             raise RuntimeError(f"Failed to configure game: {e}") from e
 
+    @property
+    def is_image_observation(self) -> bool:
+        """Return True if the environment uses image observations (for CNN policies)."""
+        return self._is_image_obs
+
     def close(self) -> None:
         """Close the environment and disable training mode if enabled."""
         try:
@@ -261,23 +357,52 @@ class BevyDodgeEnv(gym.Env):
         except Exception:
             # Ignore errors during cleanup
             pass
+        finally:
+            # Close the HTTP session
+            try:
+                self._session.close()
+            except Exception:
+                pass
 
-    def _post(self, url: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Send POST request to API.
+    def _post(self, url: str, data: Dict[str, Any], max_retries: int = 3) -> Dict[str, Any]:
+        """Send POST request to API with retry logic.
 
         Args:
             url: Full URL to send request to
             data: JSON data to send
+            max_retries: Maximum number of retry attempts for transient errors
 
         Returns:
             Response JSON as dictionary
 
         Raises:
-            requests.exceptions.RequestException: On network/HTTP errors
+            requests.exceptions.RequestException: On network/HTTP errors after all retries
         """
-        response = requests.post(url, json=data, timeout=self.timeout)
-        response.raise_for_status()
-        return response.json()
+        import time
+        last_exception = None
+
+        for attempt in range(max_retries):
+            try:
+                response = self._session.post(url, json=data, timeout=self.timeout)
+                response.raise_for_status()
+                return response.json()
+            except (requests.exceptions.ChunkedEncodingError,
+                    requests.exceptions.ConnectionError) as e:
+                last_exception = e
+                if attempt < max_retries - 1:
+                    # Wait briefly before retry (exponential backoff)
+                    wait_time = 0.1 * (2 ** attempt)
+                    print(f"⚠ Connection error (attempt {attempt + 1}/{max_retries}), retrying in {wait_time:.1f}s...")
+                    time.sleep(wait_time)
+                    continue
+                raise
+            except requests.exceptions.RequestException:
+                # Don't retry other types of errors
+                raise
+
+        # Should not reach here, but just in case
+        if last_exception:
+            raise last_exception
 
     def _get(self, url: str) -> Dict[str, Any]:
         """Send GET request to API.
@@ -291,6 +416,6 @@ class BevyDodgeEnv(gym.Env):
         Raises:
             requests.exceptions.RequestException: On network/HTTP errors
         """
-        response = requests.get(url, timeout=self.timeout)
+        response = self._session.get(url, timeout=self.timeout)
         response.raise_for_status()
         return response.json()

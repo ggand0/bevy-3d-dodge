@@ -5,33 +5,37 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tower_http::cors::{Any, CorsLayer};
 
+use crate::config::{IMAGE_OBS_WIDTH, IMAGE_OBS_HEIGHT, IMAGE_OBS_CHANNELS, ObservationMode};
 use crate::rl::observation::OBSERVATION_SIZE;
 
 /// Shared state between Axum server and Bevy game loop
 #[derive(Clone, bevy::prelude::Resource)]
 pub struct SharedEnvState {
-    pub observation: Arc<Mutex<Vec<f32>>>,
-    pub reward: Arc<Mutex<f32>>,
-    pub done: Arc<Mutex<bool>>,
-    pub truncated: Arc<Mutex<bool>>,
-    pub info: Arc<Mutex<std::collections::HashMap<String, serde_json::Value>>>,
+    pub observation: Arc<RwLock<Vec<f32>>>,
+    pub image_observation: Arc<RwLock<Vec<u8>>>,  // RGB image bytes for TopDownImage mode
+    pub reward: Arc<RwLock<f32>>,
+    pub done: Arc<RwLock<bool>>,
+    pub truncated: Arc<RwLock<bool>>,
+    pub info: Arc<RwLock<std::collections::HashMap<String, serde_json::Value>>>,
 }
 
-// Note: These are tokio::sync::Mutex, not std::sync::Mutex
+// Note: These are tokio::sync::RwLock, not std::sync::RwLock
 
 impl Default for SharedEnvState {
     fn default() -> Self {
         Self {
-            observation: Arc::new(Mutex::new(vec![0.0; OBSERVATION_SIZE])),
-            reward: Arc::new(Mutex::new(0.0)),
-            done: Arc::new(Mutex::new(false)),
-            truncated: Arc::new(Mutex::new(false)),
-            info: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            observation: Arc::new(RwLock::new(vec![0.0; OBSERVATION_SIZE])),
+            image_observation: Arc::new(RwLock::new(vec![0u8; (IMAGE_OBS_WIDTH * IMAGE_OBS_HEIGHT * IMAGE_OBS_CHANNELS) as usize])),
+            reward: Arc::new(RwLock::new(0.0)),
+            done: Arc::new(RwLock::new(false)),
+            truncated: Arc::new(RwLock::new(false)),
+            info: Arc::new(RwLock::new(std::collections::HashMap::new())),
         }
     }
 }
@@ -52,6 +56,9 @@ pub enum EnvCommand {
         spawn_angle_degrees: Option<f32>,
         observation_mode: Option<String>,
         thrower_delay_seconds: Option<f32>,
+        image_obs_width: Option<u32>,
+        image_obs_height: Option<u32>,
+        image_grayscale: Option<bool>,
     },
 }
 
@@ -85,17 +92,24 @@ struct ConfigureRequest {
     spawn_angle_degrees: Option<f32>,  // Half-angle for spawn fan (e.g., 30 = ±30° = 60° total)
     observation_mode: Option<String>,  // "standard" or "with_thrower"
     thrower_delay_seconds: Option<f32>,  // Delay before thrower indicator spawns projectile
+    image_obs_width: Option<u32>,  // Image observation width (default 84)
+    image_obs_height: Option<u32>,  // Image observation height (default 84)
+    image_grayscale: Option<bool>,  // If true, use grayscale (1 channel) instead of RGB (3 channels)
 }
 
 #[derive(Serialize)]
 struct ResetResponse {
     observation: Vec<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image_observation: Option<String>,  // Base64-encoded RGB image for TopDownImage mode
     info: std::collections::HashMap<String, serde_json::Value>,
 }
 
 #[derive(Serialize)]
 struct StepResponse {
     observation: Vec<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image_observation: Option<String>,  // Base64-encoded RGB image for TopDownImage mode
     reward: f32,
     done: bool,
     truncated: bool,
@@ -144,33 +158,62 @@ async fn reset_handler(
         .map_err(|_| AppError::InternalError("Failed to send reset command".to_string()))?;
 
     // Wait a bit for game loop to process reset (simple synchronization)
-    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+    // Increased from 50ms to 100ms to give more time for headless mode
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-    // Read observation and info from shared state
+    // Check observation mode and image config
+    let game_config = state.game_config.lock().await;
+    let obs_mode = game_config.observation_mode;
+    let image_size = (game_config.image_obs_width * game_config.image_obs_height * game_config.image_channels()) as usize;
+    drop(game_config);
+
+    // Read observation and info from shared state (using read lock for concurrent access)
     let observation = state
         .shared_state
         .observation
-        .lock()
+        .read()
         .await
         .clone();
+
+    // Get image observation if in TopDownImage mode
+    let image_observation = if obs_mode == ObservationMode::TopDownImage {
+        let image_buffer = state
+            .shared_state
+            .image_observation
+            .read()
+            .await;
+
+        // Only encode the actual image bytes (may be smaller than buffer for grayscale)
+        let image_bytes = &image_buffer[..image_size];
+
+        // Pre-allocate base64 buffer to avoid allocation during encoding
+        // Base64 expands data by ~4/3, so allocate accordingly
+        let mut base64_string = String::with_capacity((image_bytes.len() * 4 / 3) + 4);
+        BASE64.encode_string(image_bytes, &mut base64_string);
+        Some(base64_string)
+    } else {
+        None
+    };
 
     let info = state
         .shared_state
         .info
-        .lock()
+        .read()
         .await
         .clone();
 
-    Ok(Json(ResetResponse { observation, info }))
+    Ok(Json(ResetResponse { observation, image_observation, info }))
 }
 
 async fn step_handler(
     State(state): State<ApiState>,
     Json(request): Json<StepRequest>,
 ) -> Result<Json<StepResponse>, AppError> {
-    // Get current action space type from config
+    // Get current action space type, observation mode, and image size from config
     let game_config = state.game_config.lock().await;
     let action_space_type = game_config.action_space_type;
+    let obs_mode = game_config.observation_mode;
+    let image_size = (game_config.image_obs_width * game_config.image_obs_height * game_config.image_channels()) as usize;
     drop(game_config); // Release lock
 
     // Parse and validate action based on action space type
@@ -234,41 +277,61 @@ async fn step_handler(
     // Wait a bit for game loop to process step (simple synchronization)
     tokio::time::sleep(tokio::time::Duration::from_millis(16)).await; // ~60 FPS
 
-    // Read state from shared state
+    // Read state from shared state (using read locks for concurrent access)
     let observation = state
         .shared_state
         .observation
-        .lock()
+        .read()
         .await
         .clone();
 
     let reward = *state
         .shared_state
         .reward
-        .lock()
+        .read()
         .await;
 
     let done = *state
         .shared_state
         .done
-        .lock()
+        .read()
         .await;
 
     let truncated = *state
         .shared_state
         .truncated
-        .lock()
+        .read()
         .await;
 
     let info = state
         .shared_state
         .info
-        .lock()
+        .read()
         .await
         .clone();
 
+    // Get image observation if in TopDownImage mode
+    let image_observation = if obs_mode == ObservationMode::TopDownImage {
+        let image_buffer = state
+            .shared_state
+            .image_observation
+            .read()
+            .await;
+
+        // Only encode the actual image bytes (may be smaller than buffer for grayscale)
+        let image_bytes = &image_buffer[..image_size];
+
+        // Pre-allocate base64 buffer to avoid allocation during encoding
+        let mut base64_string = String::with_capacity((image_bytes.len() * 4 / 3) + 4);
+        BASE64.encode_string(image_bytes, &mut base64_string);
+        Some(base64_string)
+    } else {
+        None
+    };
+
     Ok(Json(StepResponse {
         observation,
+        image_observation,
         reward,
         done,
         truncated,
@@ -280,14 +343,32 @@ async fn observation_space_handler(
     State(state): State<ApiState>,
 ) -> Json<ObservationSpaceResponse> {
     let game_config = state.game_config.lock().await;
-    let obs_size = game_config.observation_mode.observation_size();
+    let obs_mode = game_config.observation_mode;
 
-    Json(ObservationSpaceResponse {
-        shape: vec![obs_size],
-        dtype: "float32".to_string(),
-        low: -100.0,
-        high: 100.0,
-    })
+    // Return appropriate shape based on observation mode
+    if obs_mode.is_image_mode() {
+        // Image observation: (height, width, channels) in HWC format
+        // Use configured dimensions from game_config
+        Json(ObservationSpaceResponse {
+            shape: vec![
+                game_config.image_obs_height as usize,
+                game_config.image_obs_width as usize,
+                game_config.image_channels() as usize,  // 1 for grayscale, 3 for RGB
+            ],
+            dtype: "uint8".to_string(),
+            low: 0.0,
+            high: 255.0,
+        })
+    } else {
+        // Vector observation
+        let obs_size = obs_mode.observation_size();
+        Json(ObservationSpaceResponse {
+            shape: vec![obs_size],
+            dtype: "float32".to_string(),
+            low: -100.0,
+            high: 100.0,
+        })
+    }
 }
 
 async fn action_space_handler(
@@ -399,7 +480,7 @@ async fn configure_handler(
     if let Some(ref obs_mode) = payload.observation_mode {
         if crate::config::ObservationMode::from_str(obs_mode).is_none() {
             return Err(AppError::InvalidAction(format!(
-                "Invalid observation_mode: '{}'. Must be 'standard' or 'with_thrower'",
+                "Invalid observation_mode: '{}'. Must be 'standard', 'with_thrower', or 'topdown'",
                 obs_mode
             )));
         }
@@ -415,6 +496,26 @@ async fn configure_handler(
         }
     }
 
+    // Validate image_obs_width if provided
+    if let Some(width) = payload.image_obs_width {
+        if width < 32 || width > 512 {
+            return Err(AppError::InvalidAction(format!(
+                "Invalid image_obs_width: {}. Must be between 32 and 512",
+                width
+            )));
+        }
+    }
+
+    // Validate image_obs_height if provided
+    if let Some(height) = payload.image_obs_height {
+        if height < 32 || height > 512 {
+            return Err(AppError::InvalidAction(format!(
+                "Invalid image_obs_height: {}. Must be between 32 and 512",
+                height
+            )));
+        }
+    }
+
     state
         .command_tx
         .send(EnvCommand::Configure {
@@ -424,6 +525,9 @@ async fn configure_handler(
             spawn_angle_degrees: payload.spawn_angle_degrees,
             observation_mode: payload.observation_mode,
             thrower_delay_seconds: payload.thrower_delay_seconds,
+            image_obs_width: payload.image_obs_width,
+            image_obs_height: payload.image_obs_height,
+            image_grayscale: payload.image_grayscale,
         })
         .map_err(|_| AppError::InternalError("Failed to send configure command".to_string()))?;
 

@@ -1,0 +1,46 @@
+# SAC with Top-Down Image Observations (CNN Policy)
+# Uses image input for CNN-based policy learning (default 256x256, configurable)
+# Usage: uv run python python/train_sac.py --config python/configs/sac_topdown_cnn.yaml
+
+algorithm: SAC
+port: 8000
+level: 2  # Difficulty level (1 = Baseline, 2 = Hard)
+action_space_type: basic_3d  # 3D: [vx, vy, sprint] - SAC requires continuous
+
+# Image observation mode
+observation_mode: topdown     # Top-down view (uses CnnPolicy)
+frame_stack: 4                # Stack 4 frames for velocity inference
+image_grayscale: true         # 1 channel instead of 3 = 3x smaller CNN input (4 vs 12 channels with frame stack)
+
+# Arena tuning
+spawn_angle_degrees: 30       # ±30° = 60° total fan (easier for CNN learning)
+sprint_multiplier: 1.0        # 2x speed at full sprint (base 5 -> 10)
+
+# Training - shorter for CNN since it's more compute intensive
+total_timesteps: 500000   # 500K steps initial run
+learning_rate: 0.0003     # SAC default
+
+# SAC-specific parameters
+buffer_size: 50000        # Reduced for 256x256 images (~24GB RAM)
+learning_starts: 10000    # Steps before training starts
+batch_size: 128           # Batch size
+tau: 0.005                # Soft update coefficient
+train_freq: 4             # Update every 4 steps
+gradient_steps: 1         # Gradient steps per environment step
+ent_coef: auto            # Automatic entropy tuning
+
+# Common parameters
+gamma: 0.99               # Discount factor
+
+# Network architecture (MLP after CNN features, not the CNN itself)
+# CnnPolicy uses NatureCNN by default which outputs 256 features
+# net_arch defines the layers after the CNN feature extractor
+net_arch: [256, 256]      # Two hidden layers after CNN features
+
+# Checkpointing & Evaluation
+save_freq: 50000          # Save every 50K steps
+eval_freq: 10000          # Evaluate every 10K steps
+n_eval_episodes: 5        # Evaluation episodes per eval
+
+# Device
+device: auto

@@ -18,14 +18,172 @@ from typing import Optional, Dict, Any, List, Tuple
 import gymnasium as gym
 import matplotlib.pyplot as plt
 import numpy as np
+import psutil
 from stable_baselines3 import SAC
-from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
+from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback, BaseCallback
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage, VecFrameStack
 from tensorboard.backend.event_processing import event_accumulator
 
 from bevy_dodge_env import BevyDodgeEnv
+from bevy_dodge_env.vec_env import make_vec_env
 from config import TrainingConfig
+
+
+def estimate_memory_usage(
+    image_width: int = 256,
+    image_height: int = 256,
+    grayscale: bool = True,
+    frame_stack: int = 4,
+    buffer_size: int = 100000,
+    n_envs: int = 1,
+) -> dict:
+    """Estimate memory usage for CNN training with image observations.
+
+    Returns dict with memory estimates in bytes and formatted strings.
+    """
+    channels = 1 if grayscale else 3
+
+    # Single observation size (after frame stacking)
+    obs_size_bytes = image_width * image_height * channels * frame_stack
+
+    # Replay buffer stores observations, next_observations, actions, rewards, dones
+    # Each transition: obs + next_obs + action(3) + reward(1) + done(1) = ~2*obs + 20 bytes
+    transition_size = 2 * obs_size_bytes + 20
+    buffer_mem = buffer_size * transition_size
+
+    # Parallel env overhead (each subprocess holds recent observations)
+    env_mem = n_envs * obs_size_bytes * 10  # ~10 recent frames per env
+
+    # Model overhead (CNN + MLP, rough estimate)
+    # NatureCNN: ~2M params, plus actor/critic networks
+    model_mem = 50 * 1024 * 1024  # ~50MB for model weights + gradients
+
+    # Batch processing overhead
+    batch_mem = 128 * obs_size_bytes * 2  # batch_size * obs * 2
+
+    total_mem = buffer_mem + env_mem + model_mem + batch_mem
+
+    def fmt(b: int) -> str:
+        if b >= 1024**3:
+            return f"{b / 1024**3:.1f} GB"
+        elif b >= 1024**2:
+            return f"{b / 1024**2:.1f} MB"
+        else:
+            return f"{b / 1024:.1f} KB"
+
+    return {
+        "obs_size_bytes": obs_size_bytes,
+        "buffer_mem": buffer_mem,
+        "env_mem": env_mem,
+        "model_mem": model_mem,
+        "total_mem": total_mem,
+        "obs_size_str": fmt(obs_size_bytes),
+        "buffer_mem_str": fmt(buffer_mem),
+        "env_mem_str": fmt(env_mem),
+        "model_mem_str": fmt(model_mem),
+        "total_mem_str": fmt(total_mem),
+    }
+
+
+def check_memory_requirements(
+    image_width: int = 256,
+    image_height: int = 256,
+    grayscale: bool = True,
+    frame_stack: int = 4,
+    buffer_size: int = 100000,
+    n_envs: int = 1,
+) -> bool:
+    """Check if system has enough memory for training. Returns True if OK."""
+    mem = psutil.virtual_memory()
+    available_gb = mem.available / (1024**3)
+    total_gb = mem.total / (1024**3)
+
+    est = estimate_memory_usage(
+        image_width=image_width,
+        image_height=image_height,
+        grayscale=grayscale,
+        frame_stack=frame_stack,
+        buffer_size=buffer_size,
+        n_envs=n_envs,
+    )
+
+    channels = 1 if grayscale else 3
+
+    print("=" * 60)
+    print("MEMORY ESTIMATION")
+    print("=" * 60)
+    print(f"System memory:       {available_gb:.1f} GB available / {total_gb:.1f} GB total")
+    print()
+    print(f"Image config:        {image_width}x{image_height}x{channels} ({'grayscale' if grayscale else 'RGB'})")
+    print(f"Frame stack:         {frame_stack} frames")
+    print(f"Observation size:    {est['obs_size_str']} per stacked observation")
+    print()
+    print(f"Replay buffer:       {buffer_size:,} transitions × {est['obs_size_str']} × 2 = {est['buffer_mem_str']}")
+    print(f"Parallel envs:       {n_envs} × overhead = {est['env_mem_str']}")
+    print(f"Model + gradients:   ~{est['model_mem_str']}")
+    print()
+    print(f"ESTIMATED TOTAL:     {est['total_mem_str']}")
+    print("=" * 60)
+
+    estimated_gb = est['total_mem'] / (1024**3)
+
+    if estimated_gb > available_gb * 0.8:
+        print(f"⚠️  WARNING: Estimated usage ({estimated_gb:.1f} GB) exceeds 80% of available memory!")
+        print(f"   Consider reducing buffer_size or n_envs to prevent OOM.")
+        print("=" * 60)
+        return False
+    else:
+        print(f"✓ Memory check passed ({estimated_gb:.1f} GB estimated, {available_gb:.1f} GB available)")
+        print("=" * 60)
+        return True
+
+
+class CleanupReplayBufferCallback(BaseCallback):
+    """Callback that deletes old replay buffer files after checkpoints.
+
+    Keeps only the latest replay buffer to prevent disk space exhaustion,
+    especially important for CNN training with large image observations.
+    """
+
+    def __init__(self, checkpoint_path: Path, name_prefix: str = "sac_dodge", verbose: int = 0):
+        super().__init__(verbose)
+        self.checkpoint_path = checkpoint_path
+        self.name_prefix = name_prefix
+
+    def _on_step(self) -> bool:
+        # Check for replay buffer files
+        buffer_files = sorted(
+            self.checkpoint_path.glob(f"{self.name_prefix}_replay_buffer_*.pkl"),
+            key=lambda p: self._get_steps_from_filename(p)
+        )
+
+        # Delete all but the latest replay buffer
+        if len(buffer_files) > 1:
+            for old_buffer in buffer_files[:-1]:
+                try:
+                    old_buffer.unlink()
+                    if self.verbose > 0:
+                        print(f"🗑 Deleted old replay buffer: {old_buffer.name}")
+                except OSError as e:
+                    if self.verbose > 0:
+                        print(f"⚠ Failed to delete {old_buffer.name}: {e}")
+
+        return True
+
+    @staticmethod
+    def _get_steps_from_filename(path: Path) -> int:
+        """Extract step number from filename like 'sac_dodge_replay_buffer_50000_steps.pkl'."""
+        try:
+            # sac_dodge_replay_buffer_50000_steps.pkl -> 50000
+            parts = path.stem.split("_")
+            # Find the part that's a number before "steps"
+            for i, part in enumerate(parts):
+                if part == "steps" and i > 0:
+                    return int(parts[i - 1])
+            return 0
+        except (IndexError, ValueError):
+            return 0
 
 
 def make_env(port: int) -> gym.Env:
@@ -233,6 +391,23 @@ def train(
     print(f"Logs saved to:       {log_path}")
     print()
 
+    # Check memory requirements for image observations
+    observation_mode = getattr(config, 'observation_mode', None)
+    frame_stack = getattr(config, 'frame_stack', 1) or 1
+    image_grayscale = getattr(config, 'image_grayscale', False) or False
+    n_envs = getattr(config, 'n_envs', 1)
+
+    if observation_mode == "topdown":
+        check_memory_requirements(
+            image_width=256,  # Default, matches config.rs IMAGE_OBS_WIDTH
+            image_height=256,  # Default, matches config.rs IMAGE_OBS_HEIGHT
+            grayscale=image_grayscale,
+            frame_stack=frame_stack,
+            buffer_size=buffer_size,
+            n_envs=n_envs,
+        )
+        print()
+
     # First, create a temporary environment to configure the game
     print(f"Connecting to Bevy server at http://127.0.0.1:{config.port}")
     temp_env = BevyDodgeEnv(port=config.port)
@@ -244,6 +419,7 @@ def train(
     spawn_angle_degrees = getattr(config, 'spawn_angle_degrees', None)
     observation_mode = getattr(config, 'observation_mode', None)
     thrower_delay_seconds = getattr(config, 'thrower_delay_seconds', None)
+    image_grayscale = getattr(config, 'image_grayscale', None)
 
     config_parts = [f"{level_name}", f"action space: {action_space_type}"]
     if sprint_multiplier is not None:
@@ -254,6 +430,8 @@ def train(
         config_parts.append(f"obs: {observation_mode}")
     if thrower_delay_seconds is not None:
         config_parts.append(f"thrower delay: {thrower_delay_seconds}s")
+    if image_grayscale is not None:
+        config_parts.append(f"grayscale: {image_grayscale}")
     print(f"Configuring game: {', '.join(config_parts)}...")
 
     temp_env.configure(
@@ -263,6 +441,7 @@ def train(
         spawn_angle_degrees=spawn_angle_degrees,
         observation_mode=observation_mode,
         thrower_delay_seconds=thrower_delay_seconds,
+        image_grayscale=image_grayscale,
     )
     print(f"✓ Game configured: {', '.join(config_parts)}")
 
@@ -272,35 +451,109 @@ def train(
     print()
 
     # Now create the actual training environment
-    print("Creating training environment with configured action space...")
-    env = DummyVecEnv([lambda: make_env(config.port)])
+    n_envs = getattr(config, 'n_envs', 1)
+
+    if n_envs > 1:
+        # Build config kwargs for parallel environments
+        config_kwargs = {
+            'level': config.level,
+            'action_space_type': action_space_type,
+            'observation_mode': observation_mode,
+        }
+        if sprint_multiplier is not None:
+            config_kwargs['sprint_multiplier'] = sprint_multiplier
+        if spawn_angle_degrees is not None:
+            config_kwargs['spawn_angle_degrees'] = spawn_angle_degrees
+        if thrower_delay_seconds is not None:
+            config_kwargs['thrower_delay_seconds'] = thrower_delay_seconds
+        if image_grayscale is not None:
+            config_kwargs['image_grayscale'] = image_grayscale
+
+        # Pre-configure ALL game servers before creating SubprocVecEnv
+        # This ensures all servers have the same observation/action space
+        print(f"Configuring {n_envs} game servers on ports {config.port}-{config.port + n_envs - 1}...")
+        for i in range(n_envs):
+            port = config.port + i
+            pre_env = BevyDodgeEnv(port=port)
+            pre_env.configure(**config_kwargs)
+            pre_env.reset()
+            pre_env.close()
+            print(f"  ✓ Port {port} configured")
+
+        print(f"Creating {n_envs} parallel environments...")
+        env = make_vec_env(
+            n_envs=n_envs,
+            start_port=config.port,
+            config_kwargs=config_kwargs,
+        )
+    else:
+        print("Creating training environment with configured action space...")
+        env = DummyVecEnv([lambda: make_env(config.port)])
+
+    # Detect if using image observations
+    is_image_obs = observation_mode == "topdown"
+    policy_type = "CnnPolicy" if is_image_obs else "MlpPolicy"
+
+    # Apply frame stacking for image observations (helps CNN infer velocity)
+    frame_stack = getattr(config, 'frame_stack', None)
+    if frame_stack and frame_stack > 1 and is_image_obs:
+        print(f"Applying frame stacking: {frame_stack} frames")
+        env = VecFrameStack(env, n_stack=frame_stack)
+
     print(f"✓ Environment created")
     print(f"  Observation space: {env.observation_space}")
     print(f"  Action space: {env.action_space}")
+    print(f"  Policy type: {policy_type}")
+    if frame_stack and frame_stack > 1:
+        print(f"  Frame stack: {frame_stack}")
     print()
 
     # Enable training mode to prevent accidental keyboard interruptions
-    print("Enabling training mode...")
-    env.envs[0].unwrapped.start_training()
-    print("✓ Training mode enabled - R key disabled, camera controls still available")
+    # (For parallel envs, start_training is called in vec_env.py during init)
+    if n_envs == 1:
+        print("Enabling training mode...")
+        env.envs[0].unwrapped.start_training()
+        print("✓ Training mode enabled - R key disabled, camera controls still available")
+    else:
+        print(f"✓ Training mode enabled for {n_envs} parallel environments")
     print()
 
     # Create evaluation environment
     eval_env = DummyVecEnv([lambda: make_env(config.port)])
+    # Wrap eval env with same settings as training env
+    if frame_stack and frame_stack > 1 and is_image_obs:
+        eval_env = VecFrameStack(eval_env, n_stack=frame_stack)
+    if is_image_obs:
+        eval_env = VecTransposeImage(eval_env)
 
     # Create or load SAC agent
     if resume_path:
-        # Find the latest checkpoint or final model to resume from
-        checkpoint_dir = save_path / "checkpoints"
-        final_model = save_path / "final_model.zip"
+        resume_path_obj = Path(resume_path)
 
-        model_to_load = None
-        if final_model.exists():
-            model_to_load = final_model
-        elif checkpoint_dir.exists():
-            checkpoints = sorted(checkpoint_dir.glob("sac_dodge_*.zip"))
-            if checkpoints:
-                model_to_load = checkpoints[-1]
+        # Check if resume_path is a direct path to a .zip file
+        if resume_path_obj.suffix == ".zip" and resume_path_obj.exists():
+            model_to_load = resume_path_obj
+        else:
+            # It's a run directory - find model to load
+            checkpoint_dir = save_path / "checkpoints"
+            final_model = save_path / "final_model.zip"
+
+            model_to_load = None
+            # Prioritize final_model (represents completed training), fall back to checkpoints
+            if final_model.exists():
+                model_to_load = final_model
+            elif checkpoint_dir.exists():
+                checkpoints = list(checkpoint_dir.glob("sac_dodge_*.zip"))
+                if checkpoints:
+                    # Sort by step number numerically (extract from filename)
+                    def get_steps(p: Path) -> int:
+                        # sac_dodge_125379_steps.zip -> 125379
+                        try:
+                            return int(p.stem.split("_")[2])
+                        except (IndexError, ValueError):
+                            return 0
+                    checkpoints.sort(key=get_steps)
+                    model_to_load = checkpoints[-1]
 
         if model_to_load is None:
             print("Error: No model found to resume from")
@@ -318,7 +571,7 @@ def train(
             policy_kwargs = {"net_arch": config.net_arch}
 
         model = SAC(
-            policy="MlpPolicy",
+            policy=policy_type,
             env=env,
             learning_rate=config.learning_rate,
             buffer_size=buffer_size,
@@ -363,7 +616,14 @@ def train(
         n_eval_episodes=config.n_eval_episodes,
     )
 
-    callbacks = [checkpoint_callback, eval_callback]
+    # Cleanup callback to delete old replay buffers (saves disk space for CNN training)
+    cleanup_callback = CleanupReplayBufferCallback(
+        checkpoint_path=save_path / "checkpoints",
+        name_prefix="sac_dodge",
+        verbose=1,
+    )
+
+    callbacks = [checkpoint_callback, eval_callback, cleanup_callback]
 
     # Save config to run directory for reproducibility (only on new runs)
     if not resume_path:
