@@ -49,11 +49,11 @@ def main():
     for i in range(args.n_frames):
         # Save observation
         if args.grayscale:
-            # Grayscale: (84, 84, 1) -> (84, 84)
+            # Grayscale: (H, W, 1) -> (H, W)
             img_array = obs[:, :, 0] if obs.ndim == 3 else obs
             img = Image.fromarray(img_array, mode='L')
         else:
-            # RGB: (84, 84, 3)
+            # RGB: (H, W, 3)
             img = Image.fromarray(obs)
 
         img.save(output_dir / f"obs_{i:03d}.png")

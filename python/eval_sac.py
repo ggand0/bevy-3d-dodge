@@ -336,7 +336,7 @@ Examples:
         type=str,
         choices=["standard", "with_thrower", "topdown"],
         default=None,
-        help="Observation mode ('standard' for 65-dim, 'with_thrower' for 69-dim, 'topdown' for 84x84 image). Uses model's trained mode if not specified.",
+        help="Observation mode ('standard' for 65-dim, 'with_thrower' for 69-dim, 'topdown' for image). Uses model's trained mode if not specified.",
     )
     parser.add_argument(
         "--image-grayscale",

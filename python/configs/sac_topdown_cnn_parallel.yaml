@@ -16,8 +16,8 @@ port: 8000             # Starting port (uses 8000-8003)
 level: 2               # Difficulty level (1 = Baseline, 2 = Hard)
 action_space_type: basic_3d  # 3D: [vx, vy, sprint] - SAC requires continuous
 
-# Image observation mode (84x84 default)
-observation_mode: topdown     # 84x84 RGB top-down view (uses CnnPolicy)
+# Image observation mode
+observation_mode: topdown     # Top-down view (uses CnnPolicy)
 frame_stack: 4                # Stack 4 frames for velocity inference
 image_grayscale: true         # 1 channel instead of 3 = 3x smaller CNN input
 

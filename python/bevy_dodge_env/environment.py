@@ -281,7 +281,7 @@ class BevyDodgeEnv(gym.Env):
             action_space_type: Optional action space type ("discrete", "basic_3d", etc.)
             sprint_multiplier: Optional sprint speed multiplier (e.g., 2.0 = 3x speed at full sprint)
             spawn_angle_degrees: Optional half-angle for spawn fan (e.g., 30 = ±30° = 60° total)
-            observation_mode: Optional observation mode ("standard" for 65-dim, "with_thrower" for 69-dim, "topdown" for 84x84 image)
+            observation_mode: Optional observation mode ("standard" for 65-dim, "with_thrower" for 69-dim, "topdown" for image)
             thrower_delay_seconds: Optional delay before thrower indicator spawns projectile
             image_grayscale: Optional grayscale mode (True for 1 channel, False for 3 RGB channels)
 
