@@ -21,7 +21,7 @@ total_timesteps: 500000   # 500K steps initial run
 learning_rate: 0.0003     # SAC default
 
 # SAC-specific parameters
-buffer_size: 100000       # Replay buffer size
+buffer_size: 50000        # Reduced for 256x256 images (~24GB RAM)
 learning_starts: 10000    # Steps before training starts
 batch_size: 128           # Batch size
 tau: 0.005                # Soft update coefficient

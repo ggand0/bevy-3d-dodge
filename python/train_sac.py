@@ -18,6 +18,7 @@ from typing import Optional, Dict, Any, List, Tuple
 import gymnasium as gym
 import matplotlib.pyplot as plt
 import numpy as np
+import psutil
 from stable_baselines3 import SAC
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback, BaseCallback
 from stable_baselines3.common.monitor import Monitor
@@ -27,6 +28,115 @@ from tensorboard.backend.event_processing import event_accumulator
 from bevy_dodge_env import BevyDodgeEnv
 from bevy_dodge_env.vec_env import make_vec_env
 from config import TrainingConfig
+
+
+def estimate_memory_usage(
+    image_width: int = 256,
+    image_height: int = 256,
+    grayscale: bool = True,
+    frame_stack: int = 4,
+    buffer_size: int = 100000,
+    n_envs: int = 1,
+) -> dict:
+    """Estimate memory usage for CNN training with image observations.
+
+    Returns dict with memory estimates in bytes and formatted strings.
+    """
+    channels = 1 if grayscale else 3
+
+    # Single observation size (after frame stacking)
+    obs_size_bytes = image_width * image_height * channels * frame_stack
+
+    # Replay buffer stores observations, next_observations, actions, rewards, dones
+    # Each transition: obs + next_obs + action(3) + reward(1) + done(1) = ~2*obs + 20 bytes
+    transition_size = 2 * obs_size_bytes + 20
+    buffer_mem = buffer_size * transition_size
+
+    # Parallel env overhead (each subprocess holds recent observations)
+    env_mem = n_envs * obs_size_bytes * 10  # ~10 recent frames per env
+
+    # Model overhead (CNN + MLP, rough estimate)
+    # NatureCNN: ~2M params, plus actor/critic networks
+    model_mem = 50 * 1024 * 1024  # ~50MB for model weights + gradients
+
+    # Batch processing overhead
+    batch_mem = 128 * obs_size_bytes * 2  # batch_size * obs * 2
+
+    total_mem = buffer_mem + env_mem + model_mem + batch_mem
+
+    def fmt(b: int) -> str:
+        if b >= 1024**3:
+            return f"{b / 1024**3:.1f} GB"
+        elif b >= 1024**2:
+            return f"{b / 1024**2:.1f} MB"
+        else:
+            return f"{b / 1024:.1f} KB"
+
+    return {
+        "obs_size_bytes": obs_size_bytes,
+        "buffer_mem": buffer_mem,
+        "env_mem": env_mem,
+        "model_mem": model_mem,
+        "total_mem": total_mem,
+        "obs_size_str": fmt(obs_size_bytes),
+        "buffer_mem_str": fmt(buffer_mem),
+        "env_mem_str": fmt(env_mem),
+        "model_mem_str": fmt(model_mem),
+        "total_mem_str": fmt(total_mem),
+    }
+
+
+def check_memory_requirements(
+    image_width: int = 256,
+    image_height: int = 256,
+    grayscale: bool = True,
+    frame_stack: int = 4,
+    buffer_size: int = 100000,
+    n_envs: int = 1,
+) -> bool:
+    """Check if system has enough memory for training. Returns True if OK."""
+    mem = psutil.virtual_memory()
+    available_gb = mem.available / (1024**3)
+    total_gb = mem.total / (1024**3)
+
+    est = estimate_memory_usage(
+        image_width=image_width,
+        image_height=image_height,
+        grayscale=grayscale,
+        frame_stack=frame_stack,
+        buffer_size=buffer_size,
+        n_envs=n_envs,
+    )
+
+    channels = 1 if grayscale else 3
+
+    print("=" * 60)
+    print("MEMORY ESTIMATION")
+    print("=" * 60)
+    print(f"System memory:       {available_gb:.1f} GB available / {total_gb:.1f} GB total")
+    print()
+    print(f"Image config:        {image_width}x{image_height}x{channels} ({'grayscale' if grayscale else 'RGB'})")
+    print(f"Frame stack:         {frame_stack} frames")
+    print(f"Observation size:    {est['obs_size_str']} per stacked observation")
+    print()
+    print(f"Replay buffer:       {buffer_size:,} transitions × {est['obs_size_str']} × 2 = {est['buffer_mem_str']}")
+    print(f"Parallel envs:       {n_envs} × overhead = {est['env_mem_str']}")
+    print(f"Model + gradients:   ~{est['model_mem_str']}")
+    print()
+    print(f"ESTIMATED TOTAL:     {est['total_mem_str']}")
+    print("=" * 60)
+
+    estimated_gb = est['total_mem'] / (1024**3)
+
+    if estimated_gb > available_gb * 0.8:
+        print(f"⚠️  WARNING: Estimated usage ({estimated_gb:.1f} GB) exceeds 80% of available memory!")
+        print(f"   Consider reducing buffer_size or n_envs to prevent OOM.")
+        print("=" * 60)
+        return False
+    else:
+        print(f"✓ Memory check passed ({estimated_gb:.1f} GB estimated, {available_gb:.1f} GB available)")
+        print("=" * 60)
+        return True
 
 
 class CleanupReplayBufferCallback(BaseCallback):
@@ -280,6 +390,23 @@ def train(
     print(f"Models saved to:     {save_path}")
     print(f"Logs saved to:       {log_path}")
     print()
+
+    # Check memory requirements for image observations
+    observation_mode = getattr(config, 'observation_mode', None)
+    frame_stack = getattr(config, 'frame_stack', 1) or 1
+    image_grayscale = getattr(config, 'image_grayscale', False) or False
+    n_envs = getattr(config, 'n_envs', 1)
+
+    if observation_mode == "topdown":
+        check_memory_requirements(
+            image_width=256,  # Default, matches config.rs IMAGE_OBS_WIDTH
+            image_height=256,  # Default, matches config.rs IMAGE_OBS_HEIGHT
+            grayscale=image_grayscale,
+            frame_stack=frame_stack,
+            buffer_size=buffer_size,
+            n_envs=n_envs,
+        )
+        print()
 
     # First, create a temporary environment to configure the game
     print(f"Connecting to Bevy server at http://127.0.0.1:{config.port}")
