@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::config::{GameConfig, ObservationMode};
+use crate::config::{GameConfig, ObservationMode, PROJECTILE_RADIUS, THROWER_INDICATOR_RADIUS};
 use crate::game::player::Player;
 
 #[derive(Component)]
@@ -127,7 +127,7 @@ fn spawn_projectiles(
             let (spawn_pos, spawn_vel) = compute_projectile_spawn(&config, player_transform.translation);
 
             commands.spawn((
-                Mesh3d(meshes.add(Sphere::new(0.3))),
+                Mesh3d(meshes.add(Sphere::new(PROJECTILE_RADIUS))),
                 MeshMaterial3d(materials.add(StandardMaterial {
                     base_color: Color::srgb(0.9, 0.2, 0.2),
                     perceptual_roughness: 0.3,
@@ -165,7 +165,7 @@ fn spawn_thrower_indicators(
             let (spawn_pos, spawn_vel) = compute_projectile_spawn(&config, player_transform.translation);
 
             commands.spawn((
-                Mesh3d(meshes.add(Sphere::new(0.2))),
+                Mesh3d(meshes.add(Sphere::new(THROWER_INDICATOR_RADIUS))),
                 MeshMaterial3d(materials.add(StandardMaterial {
                     base_color: Color::srgb(1.0, 0.5, 0.0), // Orange indicator
                     emissive: LinearRgba::new(1.0, 0.3, 0.0, 1.0), // Glowing
@@ -198,7 +198,7 @@ fn process_thrower_indicators(
         if indicator.spawn_timer.just_finished() {
             // Spawn the projectile
             commands.spawn((
-                Mesh3d(meshes.add(Sphere::new(0.3))),
+                Mesh3d(meshes.add(Sphere::new(PROJECTILE_RADIUS))),
                 MeshMaterial3d(materials.add(StandardMaterial {
                     base_color: Color::srgb(0.9, 0.2, 0.2),
                     perceptual_roughness: 0.3,
@@ -310,7 +310,7 @@ fn move_projectiles(
 ) {
     let gravity = 9.8;
     let dt = time.delta_secs();
-    let ground_level = 0.3; // Sphere radius to keep ball on surface
+    let ground_level = PROJECTILE_RADIUS; // Sphere radius to keep ball on surface
     let restitution = 0.7; // Bounce coefficient (0.7 = loses 30% energy per bounce)
 
     for (mut transform, mut velocity) in query.iter_mut() {

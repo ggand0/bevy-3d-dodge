@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::config::GameConfig;
+use crate::config::{GameConfig, PLAYER_RADIUS};
 
 #[derive(Component)]
 pub struct Player;
@@ -48,7 +48,7 @@ fn spawn_player(
     config: Res<GameConfig>,
 ) {
     commands.spawn((
-        Mesh3d(meshes.add(Capsule3d::new(0.5, 1.0))),
+        Mesh3d(meshes.add(Capsule3d::new(PLAYER_RADIUS, 1.0))),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Color::srgb(0.3, 0.8, 0.4),
             perceptual_roughness: 0.4, // Smooth plastic/jersey material

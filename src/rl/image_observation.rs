@@ -10,7 +10,7 @@ use bevy::render::render_resource::{
 };
 use bevy::render::view::RenderLayers;
 
-use crate::config::{IMAGE_OBS_HEIGHT, IMAGE_OBS_WIDTH};
+use crate::config::{IMAGE_OBS_HEIGHT, IMAGE_OBS_WIDTH, PLAYER_RADIUS, PROJECTILE_RADIUS, THROWER_INDICATOR_RADIUS};
 
 /// Render layer for top-down camera (separate from main camera)
 pub const TOPDOWN_RENDER_LAYER: usize = 1;
@@ -232,22 +232,19 @@ pub fn generate_synthetic_topdown_image_into(
 
     // Draw thrower indicator (orange, if present)
     // Orange: RGB(255, 140, 0) -> Gray ~158
-    // Actual size: Sphere::new(0.2) in projectile.rs
     if let Some(thrower) = thrower_pos {
-        draw_circle(pixels, width, height, thrower.x, thrower.y, 0.2, arena_size, [255, 140, 0], grayscale);
+        draw_circle(pixels, width, height, thrower.x, thrower.y, THROWER_INDICATOR_RADIUS, arena_size, [255, 140, 0], grayscale);
     }
 
     // Draw projectiles (red circles)
     // Red: RGB(255, 50, 50) -> Gray ~111
-    // Actual size: Sphere::new(0.3) in projectile.rs
     for (pos, _vel) in projectile_positions {
-        draw_circle(pixels, width, height, pos.x, pos.y, 0.3, arena_size, [255, 50, 50], grayscale);
+        draw_circle(pixels, width, height, pos.x, pos.y, PROJECTILE_RADIUS, arena_size, [255, 50, 50], grayscale);
     }
 
     // Draw player (blue circle)
     // Blue: RGB(50, 150, 255) -> Gray ~132
-    // Actual size: Capsule3d::new(0.5, 1.0) in player.rs - using radius 0.5
-    draw_circle(pixels, width, height, player_pos.x, player_pos.y, 0.5, arena_size, [50, 150, 255], grayscale);
+    draw_circle(pixels, width, height, player_pos.x, player_pos.y, PLAYER_RADIUS, arena_size, [50, 150, 255], grayscale);
 }
 
 /// Helper to draw a filled circle on the image

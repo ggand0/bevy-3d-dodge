@@ -112,6 +112,11 @@ pub const IMAGE_OBS_WIDTH: u32 = 256;
 pub const IMAGE_OBS_HEIGHT: u32 = 256;
 pub const IMAGE_OBS_CHANNELS: u32 = 3;  // RGB
 
+/// Entity radii for physics and rendering (single source of truth)
+pub const PLAYER_RADIUS: f32 = 0.5;
+pub const PROJECTILE_RADIUS: f32 = 0.3;
+pub const THROWER_INDICATOR_RADIUS: f32 = 0.2;
+
 impl ObservationMode {
     /// Parse from string (for API)
     pub fn from_str(s: &str) -> Option<Self> {
