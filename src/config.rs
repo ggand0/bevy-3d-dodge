@@ -141,14 +141,6 @@ impl ObservationMode {
             Self::TopDownImage => 0,  // Image mode doesn't use vector size
         }
     }
-
-    /// Get image dimensions for image mode (width, height, channels)
-    pub fn image_shape(&self) -> Option<(u32, u32, u32)> {
-        match self {
-            Self::TopDownImage => Some((IMAGE_OBS_WIDTH, IMAGE_OBS_HEIGHT, IMAGE_OBS_CHANNELS)),
-            _ => None,
-        }
-    }
 }
 
 /// Game difficulty levels
