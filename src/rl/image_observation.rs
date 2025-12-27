@@ -1,7 +1,7 @@
 //! Top-down image observation for CNN-based RL agents.
 //!
 //! Renders a configurable RGB top-down view of the arena for use as observation.
-//! Default is 84x84 (Atari-standard) but can be configured.
+//! Default is 256x256 with accurate entity sizes matching the game.
 
 use bevy::prelude::*;
 use bevy::render::camera::RenderTarget;
@@ -26,7 +26,7 @@ pub struct TopDownVisible;
 /// Resource to store the rendered image data
 #[derive(Resource, Default)]
 pub struct TopDownImageBuffer {
-    /// Raw RGBA pixel data (256x256x4 = 262144 bytes)
+    /// Raw RGBA pixel data (size depends on configured resolution)
     pub pixels: Vec<u8>,
     /// Whether the buffer has been updated this frame
     pub updated: bool,
@@ -232,19 +232,22 @@ pub fn generate_synthetic_topdown_image_into(
 
     // Draw thrower indicator (orange, if present)
     // Orange: RGB(255, 140, 0) -> Gray ~158
+    // Actual size: Sphere::new(0.2) in projectile.rs
     if let Some(thrower) = thrower_pos {
-        draw_circle(pixels, width, height, thrower.x, thrower.y, 0.8, arena_size, [255, 140, 0], grayscale);
+        draw_circle(pixels, width, height, thrower.x, thrower.y, 0.2, arena_size, [255, 140, 0], grayscale);
     }
 
     // Draw projectiles (red circles)
     // Red: RGB(255, 50, 50) -> Gray ~111
+    // Actual size: Sphere::new(0.3) in projectile.rs
     for (pos, _vel) in projectile_positions {
-        draw_circle(pixels, width, height, pos.x, pos.y, 0.5, arena_size, [255, 50, 50], grayscale);
+        draw_circle(pixels, width, height, pos.x, pos.y, 0.3, arena_size, [255, 50, 50], grayscale);
     }
 
-    // Draw player (blue circle, slightly larger)
+    // Draw player (blue circle)
     // Blue: RGB(50, 150, 255) -> Gray ~132
-    draw_circle(pixels, width, height, player_pos.x, player_pos.y, 0.6, arena_size, [50, 150, 255], grayscale);
+    // Actual size: Capsule3d::new(0.5, 1.0) in player.rs - using radius 0.5
+    draw_circle(pixels, width, height, player_pos.x, player_pos.y, 0.5, arena_size, [50, 150, 255], grayscale);
 }
 
 /// Helper to draw a filled circle on the image

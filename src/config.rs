@@ -107,9 +107,9 @@ pub enum ObservationMode {
     TopDownImage,
 }
 
-/// Image observation configuration - default values (Atari-standard 84x84)
-pub const IMAGE_OBS_WIDTH: u32 = 84;
-pub const IMAGE_OBS_HEIGHT: u32 = 84;
+/// Image observation configuration - default values (256x256 for accurate projection)
+pub const IMAGE_OBS_WIDTH: u32 = 256;
+pub const IMAGE_OBS_HEIGHT: u32 = 256;
 pub const IMAGE_OBS_CHANNELS: u32 = 3;  // RGB
 
 impl ObservationMode {
