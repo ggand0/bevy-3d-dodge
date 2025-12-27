@@ -21,8 +21,10 @@ from bevy_dodge_env.environment import BevyDodgeEnv
 
 
 def make_env(
-    port: int,
+    port: Optional[int] = None,
+    socket_path: Optional[str] = None,
     host: str = "127.0.0.1",
+    transport: str = "grpc",
     config_kwargs: Optional[Dict[str, Any]] = None,
 ) -> Callable[[], gym.Env]:
     """Create a function that returns a configured BevyDodgeEnv instance.
@@ -30,8 +32,10 @@ def make_env(
     This is the format required by SubprocVecEnv.
 
     Args:
-        port: Port number for this environment instance
-        host: Host address (default: "127.0.0.1")
+        port: Port number for HTTP transport (ignored if transport="grpc")
+        socket_path: Unix socket path for gRPC transport (required if transport="grpc")
+        host: Host address for HTTP transport (default: "127.0.0.1")
+        transport: Transport type - "grpc" (default) or "http"
         config_kwargs: Optional dict of configuration to pass to env.configure()
             Example: {'level': 2, 'observation_mode': 'topdown', ...}
 
@@ -39,7 +43,10 @@ def make_env(
         Function that creates and returns a configured BevyDodgeEnv instance
     """
     def _init() -> gym.Env:
-        env = BevyDodgeEnv(host=host, port=port)
+        if transport == "grpc":
+            env = BevyDodgeEnv(socket_path=socket_path, transport="grpc")
+        else:
+            env = BevyDodgeEnv(host=host, port=port, transport="http")
         if config_kwargs:
             env.configure(**config_kwargs)
             env.refresh_spaces()  # Update observation/action spaces after config change
@@ -52,41 +59,69 @@ def make_env(
 def make_vec_env(
     n_envs: int,
     start_port: int = 8000,
+    socket_base: str = "/tmp/bevy_rl",
     host: str = "127.0.0.1",
+    transport: str = "grpc",
     config_kwargs: Optional[Dict[str, Any]] = None,
 ) -> SubprocVecEnv:
     """Create a vectorized environment with multiple parallel Bevy instances.
 
-    Each environment connects to a different Bevy instance on a different port.
-    You must start n_envs Bevy instances on ports [start_port, start_port+n_envs).
+    For gRPC (default): Each env connects to a different socket file.
+    For HTTP: Each env connects to a different port.
 
-    Example:
-        # Start 4 game servers:
+    Example (gRPC):
+        # Start 4 game servers with different sockets:
+        # cargo run --release -- --headless --socket-path /tmp/bevy_rl_0.sock
+        # cargo run --release -- --headless --socket-path /tmp/bevy_rl_1.sock
+        # ...
+
+        vec_env = make_vec_env(
+            n_envs=4,
+            socket_base="/tmp/bevy_rl",  # Creates /tmp/bevy_rl_0.sock, etc.
+            config_kwargs={'level': 2, 'observation_mode': 'topdown'}
+        )
+
+    Example (HTTP):
+        # Start 4 game servers on different ports:
         # ./start_parallel_servers.sh 4
 
-        # Python:
         vec_env = make_vec_env(
             n_envs=4,
             start_port=8000,
-            config_kwargs={
-                'level': 2,
-                'observation_mode': 'topdown',
-                'action_space_type': 'basic_3d',
-            }
+            transport="http",
+            config_kwargs={'level': 2, 'observation_mode': 'topdown'}
         )
 
     Args:
         n_envs: Number of parallel environments
-        start_port: Starting port number (default: 8000)
-        host: Host address for all instances (default: "127.0.0.1")
+        start_port: Starting port number for HTTP (default: 8000)
+        socket_base: Base path for gRPC sockets (default: "/tmp/bevy_rl")
+            Socket files will be named {socket_base}_{i}.sock
+        host: Host address for HTTP (default: "127.0.0.1")
+        transport: Transport type - "grpc" (default) or "http"
         config_kwargs: Optional dict of configuration to pass to each env
 
     Returns:
         SubprocVecEnv with n_envs parallel environments
     """
-    env_fns: List[Callable[[], gym.Env]] = [
-        make_env(port=start_port + i, host=host, config_kwargs=config_kwargs)
-        for i in range(n_envs)
-    ]
+    if transport == "grpc":
+        env_fns: List[Callable[[], gym.Env]] = [
+            make_env(
+                socket_path=f"{socket_base}_{i}.sock",
+                transport="grpc",
+                config_kwargs=config_kwargs,
+            )
+            for i in range(n_envs)
+        ]
+    else:
+        env_fns = [
+            make_env(
+                port=start_port + i,
+                host=host,
+                transport="http",
+                config_kwargs=config_kwargs,
+            )
+            for i in range(n_envs)
+        ]
 
     return SubprocVecEnv(env_fns)

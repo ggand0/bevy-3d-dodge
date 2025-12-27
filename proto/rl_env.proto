@@ -1,0 +1,126 @@
+syntax = "proto3";
+
+package rl_env;
+
+// ============================================================================
+// Space Metadata Messages
+// ============================================================================
+
+message ObservationSpace {
+  repeated int32 shape = 1;  // e.g., [65] for vector, [256, 256, 3] for image
+  string dtype = 2;          // "float32" or "uint8"
+  float low = 3;
+  float high = 4;
+}
+
+message ActionSpace {
+  oneof space_type {
+    DiscreteSpace discrete = 1;
+    BoxSpace box = 2;
+  }
+}
+
+message DiscreteSpace {
+  int32 n = 1;  // Number of discrete actions
+}
+
+message BoxSpace {
+  repeated int32 shape = 1;  // e.g., [3] for 3D continuous
+  float low = 2;
+  float high = 3;
+}
+
+// ============================================================================
+// Core RL Messages
+// ============================================================================
+
+message ResetRequest {}
+
+message ResetResponse {
+  repeated float observation = 1;        // Vector observation (65 or 69 floats)
+  bytes image_observation = 2;           // Raw RGB/grayscale bytes (no Base64)
+  map<string, string> info = 3;          // Info dict (values as JSON strings)
+}
+
+message StepRequest {
+  oneof action {
+    int32 discrete_action = 1;           // For Discrete action space
+    ContinuousAction continuous_action = 2;  // For Box action space
+  }
+}
+
+message ContinuousAction {
+  repeated float values = 1;  // Action values in [-1, 1]
+}
+
+message StepResponse {
+  repeated float observation = 1;
+  bytes image_observation = 2;           // Raw bytes for images
+  float reward = 3;
+  bool done = 4;
+  bool truncated = 5;
+  map<string, string> info = 6;
+}
+
+// ============================================================================
+// Configuration Messages
+// ============================================================================
+
+message ConfigureRequest {
+  optional int32 level = 1;
+  optional string action_space_type = 2;
+  optional float sprint_multiplier = 3;
+  optional float spawn_angle_degrees = 4;
+  optional string observation_mode = 5;
+  optional float thrower_delay_seconds = 6;
+  optional uint32 image_obs_width = 7;
+  optional uint32 image_obs_height = 8;
+  optional bool image_grayscale = 9;
+}
+
+message ConfigureResponse {}
+
+message SetLevelRequest {
+  int32 level = 1;
+}
+
+message SetLevelResponse {}
+
+// ============================================================================
+// Training Mode Messages
+// ============================================================================
+
+message StartTrainingRequest {}
+message StartTrainingResponse {}
+
+message EndTrainingRequest {}
+message EndTrainingResponse {}
+
+// ============================================================================
+// Space Query Messages
+// ============================================================================
+
+message ObservationSpaceRequest {}
+message ActionSpaceRequest {}
+
+// ============================================================================
+// Service Definition
+// ============================================================================
+
+service RlEnvironment {
+  // Environment info endpoints
+  rpc GetObservationSpace(ObservationSpaceRequest) returns (ObservationSpace);
+  rpc GetActionSpace(ActionSpaceRequest) returns (ActionSpace);
+
+  // Core RL endpoints
+  rpc Reset(ResetRequest) returns (ResetResponse);
+  rpc Step(StepRequest) returns (StepResponse);
+
+  // Configuration endpoints
+  rpc Configure(ConfigureRequest) returns (ConfigureResponse);
+  rpc SetLevel(SetLevelRequest) returns (SetLevelResponse);
+
+  // Training mode control
+  rpc StartTraining(StartTrainingRequest) returns (StartTrainingResponse);
+  rpc EndTraining(EndTrainingRequest) returns (EndTrainingResponse);
+}
