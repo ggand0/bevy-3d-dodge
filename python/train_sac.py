@@ -186,9 +186,12 @@ class CleanupReplayBufferCallback(BaseCallback):
             return 0
 
 
-def make_env(port: int) -> gym.Env:
+def make_env(port: int = 8000, socket_path: str = "/tmp/bevy_rl.sock", transport: str = "grpc") -> gym.Env:
     """Create and wrap environment."""
-    env = BevyDodgeEnv(port=port)
+    if transport == "grpc":
+        env = BevyDodgeEnv(socket_path=socket_path, transport="grpc")
+    else:
+        env = BevyDodgeEnv(port=port, transport="http")
     env = Monitor(env)  # Wrap for logging
     return env
 
@@ -409,8 +412,14 @@ def train(
         print()
 
     # First, create a temporary environment to configure the game
-    print(f"Connecting to Bevy server at http://127.0.0.1:{config.port}")
-    temp_env = BevyDodgeEnv(port=config.port)
+    transport = getattr(config, 'transport', 'grpc')
+    socket_path = getattr(config, 'socket_path', '/tmp/bevy_rl.sock')
+    if transport == "grpc":
+        print(f"Connecting to Bevy server via gRPC at {socket_path}")
+        temp_env = BevyDodgeEnv(socket_path=socket_path, transport="grpc")
+    else:
+        print(f"Connecting to Bevy server via HTTP at http://127.0.0.1:{config.port}")
+        temp_env = BevyDodgeEnv(port=config.port, transport="http")
 
     # Configure game settings (level, action space, and optional params)
     level_name = "Level 1 (Baseline)" if config.level == 1 else "Level 2 (Hard)"
@@ -471,24 +480,36 @@ def train(
 
         # Pre-configure ALL game servers before creating SubprocVecEnv
         # This ensures all servers have the same observation/action space
-        print(f"Configuring {n_envs} game servers on ports {config.port}-{config.port + n_envs - 1}...")
-        for i in range(n_envs):
-            port = config.port + i
-            pre_env = BevyDodgeEnv(port=port)
-            pre_env.configure(**config_kwargs)
-            pre_env.reset()
-            pre_env.close()
-            print(f"  ✓ Port {port} configured")
+        if transport == "grpc":
+            print(f"Configuring {n_envs} game servers on sockets {socket_path.replace('.sock', '')}_0.sock to _{n_envs-1}.sock...")
+            for i in range(n_envs):
+                sock = f"{socket_path.replace('.sock', '')}_{i}.sock"
+                pre_env = BevyDodgeEnv(socket_path=sock, transport="grpc")
+                pre_env.configure(**config_kwargs)
+                pre_env.reset()
+                pre_env.close()
+                print(f"  ✓ {sock} configured")
+        else:
+            print(f"Configuring {n_envs} game servers on ports {config.port}-{config.port + n_envs - 1}...")
+            for i in range(n_envs):
+                port = config.port + i
+                pre_env = BevyDodgeEnv(port=port, transport="http")
+                pre_env.configure(**config_kwargs)
+                pre_env.reset()
+                pre_env.close()
+                print(f"  ✓ Port {port} configured")
 
         print(f"Creating {n_envs} parallel environments...")
         env = make_vec_env(
             n_envs=n_envs,
             start_port=config.port,
+            socket_base=socket_path.replace('.sock', ''),
+            transport=transport,
             config_kwargs=config_kwargs,
         )
     else:
         print("Creating training environment with configured action space...")
-        env = DummyVecEnv([lambda: make_env(config.port)])
+        env = DummyVecEnv([lambda: make_env(config.port, socket_path, transport)])
 
     # Detect if using image observations
     is_image_obs = observation_mode == "topdown"
@@ -519,7 +540,7 @@ def train(
     print()
 
     # Create evaluation environment
-    eval_env = DummyVecEnv([lambda: make_env(config.port)])
+    eval_env = DummyVecEnv([lambda: make_env(config.port, socket_path, transport)])
     # Wrap eval env with same settings as training env
     if frame_stack and frame_stack > 1 and is_image_obs:
         eval_env = VecFrameStack(eval_env, n_stack=frame_stack)

@@ -37,6 +37,7 @@ dev = [
     { name = "ruff" },
 ]
 train = [
+    { name = "matplotlib" },
     { name = "psutil" },
     { name = "pytorch-triton-rocm" },
     { name = "rich" },
@@ -51,6 +52,7 @@ requires-dist = [
     { name = "grpcio", specifier = ">=1.60.0" },
     { name = "grpcio-tools", specifier = ">=1.60.0" },
     { name = "gymnasium", specifier = ">=0.29.0" },
+    { name = "matplotlib", marker = "extra == 'train'", specifier = ">=3.8.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.7.0" },
     { name = "numpy", specifier = ">=1.24.0" },
     { name = "protobuf", specifier = ">=4.25.0" },

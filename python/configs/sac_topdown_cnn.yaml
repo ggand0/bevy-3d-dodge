@@ -3,7 +3,9 @@
 # Usage: uv run python python/train_sac.py --config python/configs/sac_topdown_cnn.yaml
 
 algorithm: SAC
-port: 8000
+transport: grpc                   # Use gRPC (default) or http
+socket_path: /tmp/bevy_rl.sock    # Unix socket for gRPC
+port: 8000                        # Port for HTTP (ignored if transport=grpc)
 level: 2  # Difficulty level (1 = Baseline, 2 = Hard)
 action_space_type: basic_3d  # 3D: [vx, vy, sprint] - SAC requires continuous
 
@@ -39,7 +41,7 @@ net_arch: [256, 256]      # Two hidden layers after CNN features
 
 # Checkpointing & Evaluation
 save_freq: 50000          # Save every 50K steps
-eval_freq: 10000          # Evaluate every 10K steps
+eval_freq: 20000          # Evaluate every 10K steps
 n_eval_episodes: 5        # Evaluation episodes per eval
 
 # Device
