@@ -414,7 +414,13 @@ def train(
     # First, create a temporary environment to configure the game
     transport = getattr(config, 'transport', 'grpc')
     socket_path = getattr(config, 'socket_path', '/tmp/bevy_rl.sock')
-    if transport == "grpc":
+
+    # For parallel envs, connect to first socket (_0.sock)
+    if n_envs > 1 and transport == "grpc":
+        first_socket = f"{socket_path.replace('.sock', '')}_0.sock"
+        print(f"Connecting to Bevy server via gRPC at {first_socket}")
+        temp_env = BevyDodgeEnv(socket_path=first_socket, transport="grpc")
+    elif transport == "grpc":
         print(f"Connecting to Bevy server via gRPC at {socket_path}")
         temp_env = BevyDodgeEnv(socket_path=socket_path, transport="grpc")
     else:
@@ -539,8 +545,9 @@ def train(
         print(f"✓ Training mode enabled for {n_envs} parallel environments")
     print()
 
-    # Create evaluation environment
-    eval_env = DummyVecEnv([lambda: make_env(config.port, socket_path, transport)])
+    # Create evaluation environment (use first socket for parallel envs)
+    eval_socket = f"{socket_path.replace('.sock', '')}_0.sock" if n_envs > 1 else socket_path
+    eval_env = DummyVecEnv([lambda: make_env(config.port, eval_socket, transport)])
     # Wrap eval env with same settings as training env
     if frame_stack and frame_stack > 1 and is_image_obs:
         eval_env = VecFrameStack(eval_env, n_stack=frame_stack)
