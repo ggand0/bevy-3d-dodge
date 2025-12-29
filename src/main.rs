@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use rl::api::{EnvCommand, SharedEnvState, start_api_server};
+use rl::grpc_api::{start_grpc_server_uds, start_grpc_server_tcp};
 use rl::environment::{RLEnvironmentState, ControlMode, TrainingMode};
 
 /// Bevy 3D Dodge - RL Training Game
@@ -21,7 +22,7 @@ struct Args {
     #[arg(long, default_value_t = false)]
     headless: bool,
 
-    /// API server port
+    /// API server port (only used with --http)
     #[arg(long, default_value_t = 8000)]
     port: u16,
 
@@ -29,6 +30,18 @@ struct Args {
     /// Note: 60 FPS is recommended for CNN training to reduce lock contention
     #[arg(long, default_value_t = 60)]
     fps: u32,
+
+    /// Use HTTP transport instead of gRPC (default: gRPC with Unix socket)
+    #[arg(long, default_value_t = false)]
+    http: bool,
+
+    /// Unix domain socket path for gRPC (only used without --http and without --grpc-port)
+    #[arg(long, default_value = "/tmp/bevy_rl.sock")]
+    socket_path: String,
+
+    /// Use TCP instead of Unix socket for gRPC (specify port number)
+    #[arg(long)]
+    grpc_port: Option<u16>,
 }
 
 fn main() {
@@ -43,14 +56,37 @@ fn main() {
     let game_config = Arc::new(Mutex::new(GameConfig::default()));
     let shared_config = SharedGameConfig(game_config.clone());
 
-    // Start HTTP API server
-    start_api_server(args.port, shared_state.clone(), command_tx, game_config);
+    // Start API server (HTTP or gRPC based on flag)
+    if args.http {
+        start_api_server(args.port, shared_state.clone(), command_tx, game_config);
+    } else if let Some(grpc_port) = args.grpc_port {
+        start_grpc_server_tcp(grpc_port, shared_state.clone(), command_tx, game_config);
+    } else {
+        start_grpc_server_uds(
+            args.socket_path.clone(),
+            shared_state.clone(),
+            command_tx,
+            game_config,
+        );
+    }
 
     if args.headless {
-        info!("Starting in HEADLESS mode (port: {}, fps: {})", args.port, args.fps);
+        if args.http {
+            info!("Starting in HEADLESS mode with HTTP (port: {}, fps: {})", args.port, args.fps);
+        } else if let Some(grpc_port) = args.grpc_port {
+            info!("Starting in HEADLESS mode with gRPC/TCP (port: {}, fps: {})", grpc_port, args.fps);
+        } else {
+            info!("Starting in HEADLESS mode with gRPC/UDS (socket: {}, fps: {})", args.socket_path, args.fps);
+        }
         run_headless(args, command_rx, shared_state, shared_config);
     } else {
-        info!("Starting in WINDOWED mode (port: {})", args.port);
+        if args.http {
+            info!("Starting in WINDOWED mode with HTTP (port: {})", args.port);
+        } else if let Some(grpc_port) = args.grpc_port {
+            info!("Starting in WINDOWED mode with gRPC/TCP (port: {})", grpc_port);
+        } else {
+            info!("Starting in WINDOWED mode with gRPC/UDS (socket: {})", args.socket_path);
+        }
         run_windowed(command_rx, shared_state, shared_config);
     }
 }
@@ -1149,6 +1185,8 @@ fn update_rl_state(
     *shared_state.done.blocking_write() = done;
     *shared_state.truncated.blocking_write() = truncated;
     *shared_state.info.blocking_write() = info;
+    // Increment step counter to signal new observation is ready
+    *shared_state.step_counter.blocking_write() += 1;
 }
 
 /// Handle RL API commands in headless mode (no materials/rendering)

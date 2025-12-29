@@ -18,6 +18,16 @@ tower-http = { version = "0.5", features = ["cors"] }
 rand = "0.8"
 base64 = "0.22"
 
+# gRPC dependencies
+tonic = "0.12"
+prost = "0.13"
+tokio-stream = { version = "0.1", features = ["net"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+async-stream = "0.3"
+
+[build-dependencies]
+tonic-build = "0.12"
+
 [profile.dev]
 opt-level = 1  # Slightly optimize dev builds for better Bevy performance
 

@@ -12,12 +12,14 @@ from gymnasium import spaces
 class BevyDodgeEnv(gym.Env):
     """Gymnasium environment wrapper for Bevy 3D dodge game.
 
-    Connects to a running Bevy game instance via HTTP REST API.
+    Connects to a running Bevy game instance via gRPC (default) or HTTP REST API.
 
     Args:
-        host: Host address of the Bevy API server (default: "127.0.0.1")
-        port: Port of the Bevy API server (default: 8000)
-        timeout: Request timeout in seconds (default: 5.0)
+        host: Host address for HTTP transport (default: "127.0.0.1")
+        port: Port for HTTP transport (default: 8000)
+        socket_path: Unix socket path for gRPC transport (default: "/tmp/bevy_rl.sock")
+        transport: Transport type - "grpc" (default) or "http"
+        timeout: Request timeout in seconds (default: 30.0)
     """
 
     metadata = {"render_modes": ["human"], "render_fps": 60}
@@ -26,36 +28,56 @@ class BevyDodgeEnv(gym.Env):
         self,
         host: str = "127.0.0.1",
         port: int = 8000,
-        timeout: float = 30.0,  # Increased from 5.0 for image observations
+        socket_path: str = "/tmp/bevy_rl.sock",
+        transport: str = "grpc",
+        timeout: float = 30.0,
     ) -> None:
         super().__init__()
 
-        self.base_url = f"http://{host}:{port}"
         self.timeout = timeout
+        self._transport = transport
+        self._grpc_client = None
+        self._session = None
 
-        # Use a Session for connection pooling and keep-alive
-        self._session = requests.Session()
-        # Configure connection adapter with retry capability
-        from urllib3.util.retry import Retry
-        from requests.adapters import HTTPAdapter
-        retry_strategy = Retry(
-            total=3,
-            backoff_factor=0.1,
-            status_forcelist=[500, 502, 503, 504],
-        )
-        adapter = HTTPAdapter(max_retries=retry_strategy, pool_maxsize=10)
-        self._session.mount("http://", adapter)
-        self._session.mount("https://", adapter)
+        if transport == "grpc":
+            # Use gRPC client with Unix domain socket
+            from .grpc_client import GrpcEnvClient
+            try:
+                self._grpc_client = GrpcEnvClient(socket_path=socket_path, timeout=timeout)
+                obs_space_info = self._grpc_client.get_observation_space()
+                action_space_info = self._grpc_client.get_action_space()
+            except Exception as e:
+                raise ConnectionError(
+                    f"Failed to connect to Bevy server via gRPC at {socket_path}. "
+                    f"Make sure the game is running. Error: {e}"
+                ) from e
+        else:
+            # Use HTTP client
+            self.base_url = f"http://{host}:{port}"
 
-        # Fetch space specifications from Bevy API
-        try:
-            obs_space_info = self._get(f"{self.base_url}/observation_space")
-            action_space_info = self._get(f"{self.base_url}/action_space")
-        except requests.exceptions.RequestException as e:
-            raise ConnectionError(
-                f"Failed to connect to Bevy server at {self.base_url}. "
-                f"Make sure the game is running. Error: {e}"
-            ) from e
+            # Use a Session for connection pooling and keep-alive
+            self._session = requests.Session()
+            # Configure connection adapter with retry capability
+            from urllib3.util.retry import Retry
+            from requests.adapters import HTTPAdapter
+            retry_strategy = Retry(
+                total=3,
+                backoff_factor=0.1,
+                status_forcelist=[500, 502, 503, 504],
+            )
+            adapter = HTTPAdapter(max_retries=retry_strategy, pool_maxsize=10)
+            self._session.mount("http://", adapter)
+            self._session.mount("https://", adapter)
+
+            # Fetch space specifications from Bevy API
+            try:
+                obs_space_info = self._get(f"{self.base_url}/observation_space")
+                action_space_info = self._get(f"{self.base_url}/action_space")
+            except requests.exceptions.RequestException as e:
+                raise ConnectionError(
+                    f"Failed to connect to Bevy server at {self.base_url}. "
+                    f"Make sure the game is running. Error: {e}"
+                ) from e
 
         # Define observation space - check dtype for image vs vector observations
         obs_dtype = obs_space_info.get("dtype", "float32")
@@ -97,8 +119,12 @@ class BevyDodgeEnv(gym.Env):
         Call this after configure() to update the spaces to match the new configuration.
         This is necessary because configure() may change the observation mode or action space type.
         """
-        obs_space_info = self._get(f"{self.base_url}/observation_space")
-        action_space_info = self._get(f"{self.base_url}/action_space")
+        if self._transport == "grpc":
+            obs_space_info = self._grpc_client.get_observation_space()
+            action_space_info = self._grpc_client.get_action_space()
+        else:
+            obs_space_info = self._get(f"{self.base_url}/observation_space")
+            action_space_info = self._get(f"{self.base_url}/action_space")
 
         # Update observation space
         obs_dtype = obs_space_info.get("dtype", "float32")
@@ -149,22 +175,29 @@ class BevyDodgeEnv(gym.Env):
         """
         super().reset(seed=seed)
 
-        try:
-            response = self._post(f"{self.base_url}/reset", {})
-        except requests.exceptions.RequestException as e:
-            raise RuntimeError(f"Failed to reset environment: {e}") from e
-
-        # Decode observation based on mode
-        if self._is_image_obs:
-            # Decode base64 image and reshape to (H, W, C)
-            image_bytes = base64.b64decode(response["image_observation"])
-            observation = np.frombuffer(image_bytes, dtype=np.uint8).reshape(
-                self.observation_space.shape
-            )
+        if self._transport == "grpc":
+            # gRPC returns raw bytes (no base64)
+            try:
+                observation, info = self._grpc_client.reset()
+            except Exception as e:
+                raise RuntimeError(f"Failed to reset environment: {e}") from e
         else:
-            observation = np.array(response["observation"], dtype=np.float32)
+            try:
+                response = self._post(f"{self.base_url}/reset", {})
+            except requests.exceptions.RequestException as e:
+                raise RuntimeError(f"Failed to reset environment: {e}") from e
 
-        info = response["info"]
+            # Decode observation based on mode
+            if self._is_image_obs:
+                # Decode base64 image and reshape to (H, W, C)
+                image_bytes = base64.b64decode(response["image_observation"])
+                observation = np.frombuffer(image_bytes, dtype=np.uint8).reshape(
+                    self.observation_space.shape
+                )
+            else:
+                observation = np.array(response["observation"], dtype=np.float32)
+
+            info = response["info"]
 
         return observation, info
 
@@ -184,38 +217,45 @@ class BevyDodgeEnv(gym.Env):
             truncated: Whether episode ended due to max steps
             info: Additional information dictionary
         """
-        # Convert action based on action space type
-        if isinstance(self.action_space, spaces.Discrete):
-            action_payload = int(action)
-        elif isinstance(self.action_space, spaces.Box):
-            action_payload = action.tolist() if isinstance(action, np.ndarray) else list(action)
+        if self._transport == "grpc":
+            # gRPC client handles action conversion internally
+            try:
+                return self._grpc_client.step(action)
+            except Exception as e:
+                raise RuntimeError(f"Failed to execute step: {e}") from e
         else:
-            raise ValueError(f"Unsupported action space type: {type(self.action_space)}")
+            # Convert action based on action space type
+            if isinstance(self.action_space, spaces.Discrete):
+                action_payload = int(action)
+            elif isinstance(self.action_space, spaces.Box):
+                action_payload = action.tolist() if isinstance(action, np.ndarray) else list(action)
+            else:
+                raise ValueError(f"Unsupported action space type: {type(self.action_space)}")
 
-        try:
-            response = self._post(
-                f"{self.base_url}/step",
-                {"action": action_payload},
-            )
-        except requests.exceptions.RequestException as e:
-            raise RuntimeError(f"Failed to execute step: {e}") from e
+            try:
+                response = self._post(
+                    f"{self.base_url}/step",
+                    {"action": action_payload},
+                )
+            except requests.exceptions.RequestException as e:
+                raise RuntimeError(f"Failed to execute step: {e}") from e
 
-        # Decode observation based on mode
-        if self._is_image_obs:
-            # Decode base64 image and reshape to (H, W, C)
-            image_bytes = base64.b64decode(response["image_observation"])
-            observation = np.frombuffer(image_bytes, dtype=np.uint8).reshape(
-                self.observation_space.shape
-            )
-        else:
-            observation = np.array(response["observation"], dtype=np.float32)
+            # Decode observation based on mode
+            if self._is_image_obs:
+                # Decode base64 image and reshape to (H, W, C)
+                image_bytes = base64.b64decode(response["image_observation"])
+                observation = np.frombuffer(image_bytes, dtype=np.uint8).reshape(
+                    self.observation_space.shape
+                )
+            else:
+                observation = np.array(response["observation"], dtype=np.float32)
 
-        reward = float(response["reward"])
-        terminated = bool(response["done"])
-        truncated = bool(response.get("truncated", False))
-        info = response["info"]
+            reward = float(response["reward"])
+            terminated = bool(response["done"])
+            truncated = bool(response.get("truncated", False))
+            info = response["info"]
 
-        return observation, reward, terminated, truncated, info
+            return observation, reward, terminated, truncated, info
 
     def start_training(self) -> None:
         """Enable training mode - disables R key reset to prevent accidental interruptions.
@@ -223,22 +263,34 @@ class BevyDodgeEnv(gym.Env):
         Call this at the beginning of training to ensure the game won't be accidentally
         reset via keyboard during RL training. Camera controls remain enabled for observation.
         """
-        try:
-            response = requests.post(f"{self.base_url}/start_training", timeout=self.timeout)
-            response.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            raise RuntimeError(f"Failed to start training mode: {e}") from e
+        if self._transport == "grpc":
+            try:
+                self._grpc_client.start_training()
+            except Exception as e:
+                raise RuntimeError(f"Failed to start training mode: {e}") from e
+        else:
+            try:
+                response = requests.post(f"{self.base_url}/start_training", timeout=self.timeout)
+                response.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                raise RuntimeError(f"Failed to start training mode: {e}") from e
 
     def end_training(self) -> None:
         """Disable training mode - re-enables R key reset and returns to human control.
 
         Call this at the end of training to restore normal keyboard controls.
         """
-        try:
-            response = requests.post(f"{self.base_url}/end_training", timeout=self.timeout)
-            response.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            raise RuntimeError(f"Failed to end training mode: {e}") from e
+        if self._transport == "grpc":
+            try:
+                self._grpc_client.end_training()
+            except Exception as e:
+                raise RuntimeError(f"Failed to end training mode: {e}") from e
+        else:
+            try:
+                response = requests.post(f"{self.base_url}/end_training", timeout=self.timeout)
+                response.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                raise RuntimeError(f"Failed to end training mode: {e}") from e
 
     def set_level(self, level: int) -> None:
         """Set the game difficulty level.
@@ -254,15 +306,21 @@ class BevyDodgeEnv(gym.Env):
         if level not in (1, 2):
             raise ValueError(f"Invalid level: {level}. Must be 1 or 2")
 
-        try:
-            response = requests.post(
-                f"{self.base_url}/set_level",
-                json={"level": level},
-                timeout=self.timeout
-            )
-            response.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            raise RuntimeError(f"Failed to set level: {e}") from e
+        if self._transport == "grpc":
+            try:
+                self._grpc_client.set_level(level)
+            except Exception as e:
+                raise RuntimeError(f"Failed to set level: {e}") from e
+        else:
+            try:
+                response = requests.post(
+                    f"{self.base_url}/set_level",
+                    json={"level": level},
+                    timeout=self.timeout
+                )
+                response.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                raise RuntimeError(f"Failed to set level: {e}") from e
 
     def configure(
         self,
@@ -272,6 +330,8 @@ class BevyDodgeEnv(gym.Env):
         spawn_angle_degrees: Optional[float] = None,
         observation_mode: Optional[str] = None,
         thrower_delay_seconds: Optional[float] = None,
+        image_obs_width: Optional[int] = None,
+        image_obs_height: Optional[int] = None,
         image_grayscale: Optional[bool] = None,
     ) -> None:
         """Configure game settings.
@@ -283,6 +343,8 @@ class BevyDodgeEnv(gym.Env):
             spawn_angle_degrees: Optional half-angle for spawn fan (e.g., 30 = ±30° = 60° total)
             observation_mode: Optional observation mode ("standard" for 65-dim, "with_thrower" for 69-dim, "topdown" for image)
             thrower_delay_seconds: Optional delay before thrower indicator spawns projectile
+            image_obs_width: Optional image observation width (32-512)
+            image_obs_height: Optional image observation height (32-512)
             image_grayscale: Optional grayscale mode (True for 1 channel, False for 3 RGB channels)
 
         Note:
@@ -297,7 +359,7 @@ class BevyDodgeEnv(gym.Env):
             >>> env.configure(action_space_type="basic_3d", sprint_multiplier=2.0, spawn_angle_degrees=30)
             >>> env.reset()  # Ensures config is synced
         """
-        if all(p is None for p in [level, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds, image_grayscale]):
+        if all(p is None for p in [level, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds, image_obs_width, image_obs_height, image_grayscale]):
             raise ValueError("At least one configuration parameter must be provided")
 
         if level is not None and level not in (1, 2):
@@ -318,31 +380,51 @@ class BevyDodgeEnv(gym.Env):
         # Note: action_space_type validation is handled server-side
         # Valid values: "discrete", "basic_3d", "basic_4d_jump", "tilt_5d", "full_6d"
 
-        config_data = {}
-        if level is not None:
-            config_data["level"] = level
-        if action_space_type is not None:
-            config_data["action_space_type"] = action_space_type
-        if sprint_multiplier is not None:
-            config_data["sprint_multiplier"] = sprint_multiplier
-        if spawn_angle_degrees is not None:
-            config_data["spawn_angle_degrees"] = spawn_angle_degrees
-        if observation_mode is not None:
-            config_data["observation_mode"] = observation_mode
-        if thrower_delay_seconds is not None:
-            config_data["thrower_delay_seconds"] = thrower_delay_seconds
-        if image_grayscale is not None:
-            config_data["image_grayscale"] = image_grayscale
+        if self._transport == "grpc":
+            try:
+                self._grpc_client.configure(
+                    level=level,
+                    action_space_type=action_space_type,
+                    sprint_multiplier=sprint_multiplier,
+                    spawn_angle_degrees=spawn_angle_degrees,
+                    observation_mode=observation_mode,
+                    thrower_delay_seconds=thrower_delay_seconds,
+                    image_obs_width=image_obs_width,
+                    image_obs_height=image_obs_height,
+                    image_grayscale=image_grayscale,
+                )
+            except Exception as e:
+                raise RuntimeError(f"Failed to configure game: {e}") from e
+        else:
+            config_data = {}
+            if level is not None:
+                config_data["level"] = level
+            if action_space_type is not None:
+                config_data["action_space_type"] = action_space_type
+            if sprint_multiplier is not None:
+                config_data["sprint_multiplier"] = sprint_multiplier
+            if spawn_angle_degrees is not None:
+                config_data["spawn_angle_degrees"] = spawn_angle_degrees
+            if observation_mode is not None:
+                config_data["observation_mode"] = observation_mode
+            if thrower_delay_seconds is not None:
+                config_data["thrower_delay_seconds"] = thrower_delay_seconds
+            if image_obs_width is not None:
+                config_data["image_obs_width"] = image_obs_width
+            if image_obs_height is not None:
+                config_data["image_obs_height"] = image_obs_height
+            if image_grayscale is not None:
+                config_data["image_grayscale"] = image_grayscale
 
-        try:
-            response = requests.post(
-                f"{self.base_url}/configure",
-                json=config_data,
-                timeout=self.timeout
-            )
-            response.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            raise RuntimeError(f"Failed to configure game: {e}") from e
+            try:
+                response = requests.post(
+                    f"{self.base_url}/configure",
+                    json=config_data,
+                    timeout=self.timeout
+                )
+                response.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                raise RuntimeError(f"Failed to configure game: {e}") from e
 
     @property
     def is_image_observation(self) -> bool:
@@ -358,11 +440,17 @@ class BevyDodgeEnv(gym.Env):
             # Ignore errors during cleanup
             pass
         finally:
-            # Close the HTTP session
-            try:
-                self._session.close()
-            except Exception:
-                pass
+            if self._transport == "grpc":
+                try:
+                    self._grpc_client.close()
+                except Exception:
+                    pass
+            else:
+                # Close the HTTP session
+                try:
+                    self._session.close()
+                except Exception:
+                    pass
 
     def _post(self, url: str, data: Dict[str, Any], max_retries: int = 3) -> Dict[str, Any]:
         """Send POST request to API with retry logic.

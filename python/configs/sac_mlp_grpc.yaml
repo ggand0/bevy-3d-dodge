@@ -1,0 +1,42 @@
+# SAC with Vector Observations (MLP Policy) + gRPC
+# Uses 65-dim state vector for fast MLP-based policy learning
+# Usage: uv run python python/train_sac.py --config python/configs/sac_mlp_grpc.yaml
+
+algorithm: SAC
+transport: grpc                   # gRPC for high throughput
+socket_path: /tmp/bevy_rl.sock    # Unix socket base for gRPC
+port: 8000                        # Port for HTTP (ignored if transport=grpc)
+n_envs: 4                         # Parallel environments for higher throughput
+level: 2  # Difficulty level (1 = Baseline, 2 = Hard)
+action_space_type: basic_3d  # 3D: [vx, vy, sprint] - SAC requires continuous
+
+# Vector observation mode (MLP)
+observation_mode: with_thrower    # 69-dim vector (includes thrower position)
+# observation_mode: standard      # 65-dim vector (no thrower info)
+
+# Training - can run longer since MLP is fast
+total_timesteps: 1000000  # 1M steps
+learning_rate: 0.0003     # SAC default
+
+# SAC-specific parameters
+buffer_size: 100000       # Larger buffer OK for small observations (~26MB)
+learning_starts: 10000    # Steps before training starts
+batch_size: 256           # Larger batch for MLP
+tau: 0.005                # Soft update coefficient
+train_freq: 1             # Update every step (fast with MLP)
+gradient_steps: 1         # Gradient steps per environment step
+ent_coef: auto            # Automatic entropy tuning
+
+# Common parameters
+gamma: 0.99               # Discount factor
+
+# Network architecture
+net_arch: [256, 256]      # Two hidden layers
+
+# Checkpointing & Evaluation
+save_freq: 100000         # Save every 100K steps
+eval_freq: 25000          # Evaluate every 25K steps
+n_eval_episodes: 10       # More eval episodes for stable metrics
+
+# Device
+device: auto

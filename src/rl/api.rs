@@ -6,6 +6,7 @@ use axum::{
     Json, Router,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use bevy::log::info;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex, RwLock};
@@ -13,6 +14,11 @@ use tower_http::cors::{Any, CorsLayer};
 
 use crate::config::{IMAGE_OBS_WIDTH, IMAGE_OBS_HEIGHT, IMAGE_OBS_CHANNELS, ObservationMode};
 use crate::rl::observation::OBSERVATION_SIZE;
+use crate::rl::validation::{
+    validate_action_space_type, validate_image_dimension, validate_level,
+    validate_observation_mode, validate_spawn_angle, validate_sprint_multiplier,
+    validate_thrower_delay, ValidationError,
+};
 
 /// Shared state between Axum server and Bevy game loop
 #[derive(Clone, bevy::prelude::Resource)]
@@ -23,6 +29,7 @@ pub struct SharedEnvState {
     pub done: Arc<RwLock<bool>>,
     pub truncated: Arc<RwLock<bool>>,
     pub info: Arc<RwLock<std::collections::HashMap<String, serde_json::Value>>>,
+    pub step_counter: Arc<RwLock<u64>>,  // Incremented after each step for sync
 }
 
 // Note: These are tokio::sync::RwLock, not std::sync::RwLock
@@ -36,6 +43,7 @@ impl Default for SharedEnvState {
             done: Arc::new(RwLock::new(false)),
             truncated: Arc::new(RwLock::new(false)),
             info: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            step_counter: Arc::new(RwLock::new(0)),
         }
     }
 }
@@ -418,10 +426,7 @@ async fn set_level_handler(
     State(state): State<ApiState>,
     Json(payload): Json<SetLevelRequest>,
 ) -> Result<StatusCode, AppError> {
-    // Validate level number (1 or 2)
-    if payload.level < 1 || payload.level > 2 {
-        return Err(AppError::InvalidAction(format!("Invalid level: {}. Must be 1 or 2", payload.level)));
-    }
+    validate_level(payload.level as i32)?;
 
     state
         .command_tx
@@ -435,85 +440,30 @@ async fn configure_handler(
     State(state): State<ApiState>,
     Json(payload): Json<ConfigureRequest>,
 ) -> Result<StatusCode, AppError> {
-    // Validate level if provided
+    // Validate all optional fields using shared validation
     if let Some(level) = payload.level {
-        if level < 1 || level > 2 {
-            return Err(AppError::InvalidAction(format!("Invalid level: {}. Must be 1 or 2", level)));
-        }
+        validate_level(level as i32)?;
     }
-
-    // Validate action_space_type if provided
     if let Some(ref action_space_type) = payload.action_space_type {
-        let action_space_lower = action_space_type.to_lowercase();
-
-        // Check if it's discrete or a valid continuous config
-        if action_space_lower != "discrete" &&
-           crate::config::ContinuousActionConfig::from_str(&action_space_lower).is_none() {
-            return Err(AppError::InvalidAction(format!(
-                "Invalid action_space_type: '{}'. Must be 'discrete' or a continuous variant (basic_3d, basic_4d_jump, tilt_5d, full_6d)",
-                action_space_type
-            )));
-        }
+        validate_action_space_type(action_space_type)?;
     }
-
-    // Validate spawn_angle_degrees if provided
     if let Some(angle) = payload.spawn_angle_degrees {
-        if angle <= 0.0 || angle > 180.0 {
-            return Err(AppError::InvalidAction(format!(
-                "Invalid spawn_angle_degrees: {}. Must be between 0 and 180",
-                angle
-            )));
-        }
+        validate_spawn_angle(angle)?;
     }
-
-    // Validate sprint_multiplier if provided
     if let Some(mult) = payload.sprint_multiplier {
-        if mult < 0.0 || mult > 10.0 {
-            return Err(AppError::InvalidAction(format!(
-                "Invalid sprint_multiplier: {}. Must be between 0 and 10",
-                mult
-            )));
-        }
+        validate_sprint_multiplier(mult)?;
     }
-
-    // Validate observation_mode if provided
     if let Some(ref obs_mode) = payload.observation_mode {
-        if crate::config::ObservationMode::from_str(obs_mode).is_none() {
-            return Err(AppError::InvalidAction(format!(
-                "Invalid observation_mode: '{}'. Must be 'standard', 'with_thrower', or 'topdown'",
-                obs_mode
-            )));
-        }
+        validate_observation_mode(obs_mode)?;
     }
-
-    // Validate thrower_delay_seconds if provided
     if let Some(delay) = payload.thrower_delay_seconds {
-        if delay <= 0.0 || delay > 10.0 {
-            return Err(AppError::InvalidAction(format!(
-                "Invalid thrower_delay_seconds: {}. Must be between 0 and 10",
-                delay
-            )));
-        }
+        validate_thrower_delay(delay)?;
     }
-
-    // Validate image_obs_width if provided
     if let Some(width) = payload.image_obs_width {
-        if width < 32 || width > 512 {
-            return Err(AppError::InvalidAction(format!(
-                "Invalid image_obs_width: {}. Must be between 32 and 512",
-                width
-            )));
-        }
+        validate_image_dimension(width, "image_obs_width")?;
     }
-
-    // Validate image_obs_height if provided
     if let Some(height) = payload.image_obs_height {
-        if height < 32 || height > 512 {
-            return Err(AppError::InvalidAction(format!(
-                "Invalid image_obs_height: {}. Must be between 32 and 512",
-                height
-            )));
-        }
+        validate_image_dimension(height, "image_obs_height")?;
     }
 
     state
@@ -541,6 +491,12 @@ async fn configure_handler(
 enum AppError {
     InvalidAction(String),
     InternalError(String),
+}
+
+impl From<ValidationError> for AppError {
+    fn from(err: ValidationError) -> Self {
+        AppError::InvalidAction(err.message)
+    }
 }
 
 impl IntoResponse for AppError {
@@ -606,7 +562,7 @@ pub fn start_api_server(
             let addr = format!("127.0.0.1:{}", port);
             let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
 
-            println!("RL API server listening on http://{}", addr);
+            info!("RL API server listening on http://{}", addr);
 
             axum::serve(listener, app).await.unwrap();
         });

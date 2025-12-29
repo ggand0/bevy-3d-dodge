@@ -45,8 +45,10 @@ class TrainingConfig:
     save_freq: int = 10000
     n_eval_episodes: int = 5
 
-    # Environment
-    port: int = 8000
+    # Environment connection
+    transport: str = "grpc"  # "grpc" (default) or "http"
+    socket_path: str = "/tmp/bevy_rl.sock"  # Unix socket for gRPC
+    port: int = 8000  # Port for HTTP (ignored if transport=grpc)
     n_envs: int = 1  # Number of parallel environments (requires n_envs game servers)
     max_episode_steps: int = 1000
     level: int = 1  # Difficulty level (1 for baseline, 2 for hard)
