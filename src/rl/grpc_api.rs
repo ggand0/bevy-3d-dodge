@@ -1,3 +1,5 @@
+use bevy::log::info;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::net::UnixListener;
 use tokio::sync::{mpsc, Mutex};
@@ -6,6 +8,11 @@ use tonic::{Request, Response, Status, transport::Server};
 
 use crate::config::{GameConfig, ObservationMode};
 use crate::rl::api::{EnvCommand, SharedEnvState};
+use crate::rl::validation::{
+    validate_action_space_type, validate_image_dimension, validate_level,
+    validate_observation_mode, validate_spawn_angle, validate_sprint_multiplier,
+    validate_thrower_delay, ValidationError,
+};
 
 // Include generated protobuf code
 pub mod rl_env {
@@ -39,6 +46,46 @@ impl GrpcEnvService {
             command_tx,
             game_config,
         }
+    }
+
+    /// Convert info HashMap to string map for protobuf
+    async fn get_info_map(&self) -> HashMap<String, String> {
+        let info_map = self.shared_state.info.read().await;
+        info_map
+            .iter()
+            .map(|(k, v)| (k.clone(), v.to_string()))
+            .collect()
+    }
+
+    /// Get image observation bytes if in TopDownImage mode
+    async fn get_image_observation(&self, obs_mode: ObservationMode, image_size: usize) -> Vec<u8> {
+        if obs_mode == ObservationMode::TopDownImage {
+            let image_buffer = self.shared_state.image_observation.read().await;
+            image_buffer[..image_size].to_vec()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Wait for step counter to increment (with timeout)
+    async fn wait_for_step(&self, current_step: u64, timeout_ms: u64) {
+        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_millis(timeout_ms);
+        loop {
+            let new_step = *self.shared_state.step_counter.read().await;
+            if new_step > current_step {
+                break;
+            }
+            if tokio::time::Instant::now() >= deadline {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    }
+}
+
+impl From<ValidationError> for Status {
+    fn from(err: ValidationError) -> Self {
+        Status::invalid_argument(err.message)
     }
 }
 
@@ -103,13 +150,16 @@ impl RlEnvironment for GrpcEnvService {
         &self,
         _request: Request<ResetRequest>,
     ) -> Result<Response<ResetResponse>, Status> {
+        // Get current step counter for sync
+        let current_step = *self.shared_state.step_counter.read().await;
+
         // Send reset command to game loop
         self.command_tx
             .send(EnvCommand::Reset)
             .map_err(|_| Status::internal("Failed to send reset command"))?;
 
-        // Wait for game loop to process reset (reduced for higher throughput)
-        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+        // Wait for step counter to increment (consistent with step method)
+        self.wait_for_step(current_step, 100).await;
 
         // Get observation mode and image size
         let game_config = self.game_config.lock().await;
@@ -121,21 +171,8 @@ impl RlEnvironment for GrpcEnvService {
 
         // Read observation from shared state
         let observation = self.shared_state.observation.read().await.clone();
-
-        // Get image observation if in TopDownImage mode (raw bytes, no Base64!)
-        let image_observation = if obs_mode == ObservationMode::TopDownImage {
-            let image_buffer = self.shared_state.image_observation.read().await;
-            image_buffer[..image_size].to_vec()
-        } else {
-            Vec::new()
-        };
-
-        // Read info and convert to string map
-        let info_map = self.shared_state.info.read().await;
-        let info: std::collections::HashMap<String, String> = info_map
-            .iter()
-            .map(|(k, v)| (k.clone(), v.to_string()))
-            .collect();
+        let image_observation = self.get_image_observation(obs_mode, image_size).await;
+        let info = self.get_info_map().await;
 
         Ok(Response::new(ResetResponse {
             observation,
@@ -219,39 +256,17 @@ impl RlEnvironment for GrpcEnvService {
             .send(command)
             .map_err(|_| Status::internal("Failed to send step command"))?;
 
-        // Wait for step counter to increment (max 100ms timeout)
-        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_millis(100);
-        loop {
-            let new_step = *self.shared_state.step_counter.read().await;
-            if new_step > current_step {
-                break;
-            }
-            if tokio::time::Instant::now() >= deadline {
-                break; // Timeout - return current state
-            }
-            tokio::task::yield_now().await;
-        }
+        // Wait for step counter to increment
+        self.wait_for_step(current_step, 100).await;
 
         // Read state from shared state
         let observation = self.shared_state.observation.read().await.clone();
         let reward = *self.shared_state.reward.read().await;
         let done = *self.shared_state.done.read().await;
         let truncated = *self.shared_state.truncated.read().await;
+        let image_observation = self.get_image_observation(obs_mode, image_size).await;
 
-        // Get image observation if in TopDownImage mode (raw bytes!)
-        let image_observation = if obs_mode == ObservationMode::TopDownImage {
-            let image_buffer = self.shared_state.image_observation.read().await;
-            image_buffer[..image_size].to_vec()
-        } else {
-            Vec::new()
-        };
-
-        // Read info and convert to string map
-        let info_map = self.shared_state.info.read().await;
-        let info: std::collections::HashMap<String, String> = info_map
-            .iter()
-            .map(|(k, v)| (k.clone(), v.to_string()))
-            .collect();
+        let info = self.get_info_map().await;
 
         Ok(Response::new(StepResponse {
             observation,
@@ -269,86 +284,30 @@ impl RlEnvironment for GrpcEnvService {
     ) -> Result<Response<ConfigureResponse>, Status> {
         let req = request.into_inner();
 
-        // Validate level if provided
+        // Validate all optional fields using shared validation
         if let Some(level) = req.level {
-            if level < 1 || level > 2 {
-                return Err(Status::invalid_argument(format!(
-                    "Invalid level: {}. Must be 1 or 2",
-                    level
-                )));
-            }
+            validate_level(level)?;
         }
-
-        // Validate action_space_type if provided
         if let Some(ref action_space_type) = req.action_space_type {
-            let action_space_lower = action_space_type.to_lowercase();
-            if action_space_lower != "discrete"
-                && crate::config::ContinuousActionConfig::from_str(&action_space_lower).is_none()
-            {
-                return Err(Status::invalid_argument(format!(
-                    "Invalid action_space_type: '{}'. Must be 'discrete' or a continuous variant",
-                    action_space_type
-                )));
-            }
+            validate_action_space_type(action_space_type)?;
         }
-
-        // Validate spawn_angle_degrees if provided
         if let Some(angle) = req.spawn_angle_degrees {
-            if angle <= 0.0 || angle > 180.0 {
-                return Err(Status::invalid_argument(format!(
-                    "Invalid spawn_angle_degrees: {}. Must be between 0 and 180",
-                    angle
-                )));
-            }
+            validate_spawn_angle(angle)?;
         }
-
-        // Validate sprint_multiplier if provided
         if let Some(mult) = req.sprint_multiplier {
-            if mult < 0.0 || mult > 10.0 {
-                return Err(Status::invalid_argument(format!(
-                    "Invalid sprint_multiplier: {}. Must be between 0 and 10",
-                    mult
-                )));
-            }
+            validate_sprint_multiplier(mult)?;
         }
-
-        // Validate observation_mode if provided
         if let Some(ref obs_mode) = req.observation_mode {
-            if ObservationMode::from_str(obs_mode).is_none() {
-                return Err(Status::invalid_argument(format!(
-                    "Invalid observation_mode: '{}'. Must be 'standard', 'with_thrower', or 'topdown'",
-                    obs_mode
-                )));
-            }
+            validate_observation_mode(obs_mode)?;
         }
-
-        // Validate thrower_delay_seconds if provided
         if let Some(delay) = req.thrower_delay_seconds {
-            if delay <= 0.0 || delay > 10.0 {
-                return Err(Status::invalid_argument(format!(
-                    "Invalid thrower_delay_seconds: {}. Must be between 0 and 10",
-                    delay
-                )));
-            }
+            validate_thrower_delay(delay)?;
         }
-
-        // Validate image dimensions if provided
         if let Some(width) = req.image_obs_width {
-            if width < 32 || width > 512 {
-                return Err(Status::invalid_argument(format!(
-                    "Invalid image_obs_width: {}. Must be between 32 and 512",
-                    width
-                )));
-            }
+            validate_image_dimension(width, "image_obs_width")?;
         }
-
         if let Some(height) = req.image_obs_height {
-            if height < 32 || height > 512 {
-                return Err(Status::invalid_argument(format!(
-                    "Invalid image_obs_height: {}. Must be between 32 and 512",
-                    height
-                )));
-            }
+            validate_image_dimension(height, "image_obs_height")?;
         }
 
         self.command_tx
@@ -373,13 +332,7 @@ impl RlEnvironment for GrpcEnvService {
         request: Request<SetLevelRequest>,
     ) -> Result<Response<SetLevelResponse>, Status> {
         let req = request.into_inner();
-
-        if req.level < 1 || req.level > 2 {
-            return Err(Status::invalid_argument(format!(
-                "Invalid level: {}. Must be 1 or 2",
-                req.level
-            )));
-        }
+        validate_level(req.level)?;
 
         self.command_tx
             .send(EnvCommand::SetLevel {
@@ -431,7 +384,7 @@ pub fn start_grpc_server_uds(
 
             let service = GrpcEnvService::new(shared_state, command_tx, game_config);
 
-            println!("gRPC server listening on unix://{}", socket_path);
+            info!("gRPC server listening on unix://{}", socket_path);
 
             Server::builder()
                 .add_service(RlEnvironmentServer::new(service))
@@ -455,7 +408,7 @@ pub fn start_grpc_server_tcp(
             let addr = format!("0.0.0.0:{}", port).parse().unwrap();
             let service = GrpcEnvService::new(shared_state, command_tx, game_config);
 
-            println!("gRPC server listening on {}", addr);
+            info!("gRPC server listening on {}", addr);
 
             Server::builder()
                 .add_service(RlEnvironmentServer::new(service))

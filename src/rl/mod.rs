@@ -6,3 +6,4 @@ pub mod environment;
 pub mod grpc_api;
 pub mod image_observation;
 pub mod observation;
+pub mod validation;

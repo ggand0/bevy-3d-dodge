@@ -741,6 +741,12 @@ Examples:
         default=None,
         help="Path to existing run directory to resume training from",
     )
+    parser.add_argument(
+        "--n-envs",
+        type=int,
+        default=None,
+        help="Number of parallel environments (overrides config)",
+    )
 
     args = parser.parse_args()
 
@@ -760,6 +766,8 @@ Examples:
         config.total_timesteps = args.steps
     if args.port is not None:
         config.port = args.port
+    if args.n_envs is not None:
+        config.n_envs = args.n_envs
 
     train(config, config_name=config_name, resume_path=args.resume)
 
