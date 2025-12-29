@@ -11,6 +11,8 @@ Usage:
 """
 
 import argparse
+import json
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
@@ -214,108 +216,152 @@ def load_tensorboard_data(logdir: Path) -> Dict[str, List[Tuple[int, float]]]:
     return data
 
 
-def plot_learning_curves(log_path: Path, output_dir: Path) -> None:
-    """Plot learning curves after training completes."""
+def format_duration(seconds: float) -> str:
+    """Format duration in seconds to human-readable string."""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    if hours > 0:
+        return f"{hours}h {minutes}m {secs}s"
+    elif minutes > 0:
+        return f"{minutes}m {secs}s"
+    else:
+        return f"{secs}s"
+
+
+def plot_learning_curves(log_path: Path, output_dir: Path, training_duration_seconds: float = 0.0) -> None:
+    """Plot learning curves after training completes and save summary JSON."""
     print("\nGenerating learning curves...")
 
     data = load_tensorboard_data(log_path)
-    if not data:
+
+    # Generate plots only if we have data
+    if data:
+        plots_dir = output_dir / "plots"
+        plots_dir.mkdir(parents=True, exist_ok=True)
+
+        plt.style.use('seaborn-v0_8-darkgrid')
+
+        # Combined learning curves plot (2x2)
+        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+        # 1. Episode Reward
+        if 'rollout/ep_rew_mean' in data:
+            steps, rewards = zip(*data['rollout/ep_rew_mean'])
+            axes[0, 0].plot(steps, rewards, linewidth=1.5, alpha=0.6, label='Raw')
+            window = min(50, max(1, len(rewards) // 10))
+            if window > 1 and len(rewards) >= window:
+                rolling_mean = np.convolve(rewards, np.ones(window)/window, mode='valid')
+                axes[0, 0].plot(steps[window-1:], rolling_mean, linewidth=2.5, color='red', label=f'Smoothed (w={window})')
+            axes[0, 0].set_title('Episode Reward', fontsize=12, fontweight='bold')
+            axes[0, 0].set_xlabel('Timesteps')
+            axes[0, 0].set_ylabel('Mean Reward')
+            axes[0, 0].legend(loc='lower right')
+            axes[0, 0].grid(True, alpha=0.3)
+
+        # 2. Episode Length
+        if 'rollout/ep_len_mean' in data:
+            steps, lengths = zip(*data['rollout/ep_len_mean'])
+            axes[0, 1].plot(steps, lengths, linewidth=1.5, alpha=0.6, label='Raw')
+            window = min(50, max(1, len(lengths) // 10))
+            if window > 1 and len(lengths) >= window:
+                rolling_mean = np.convolve(lengths, np.ones(window)/window, mode='valid')
+                axes[0, 1].plot(steps[window-1:], rolling_mean, linewidth=2.5, color='green', label=f'Smoothed (w={window})')
+            axes[0, 1].set_title('Episode Length', fontsize=12, fontweight='bold')
+            axes[0, 1].set_xlabel('Timesteps')
+            axes[0, 1].set_ylabel('Mean Length (steps)')
+            axes[0, 1].legend(loc='lower right')
+            axes[0, 1].grid(True, alpha=0.3)
+
+        # 3. Eval Reward (from EvalCallback)
+        if 'eval/mean_reward' in data:
+            steps, rewards = zip(*data['eval/mean_reward'])
+            axes[1, 0].plot(steps, rewards, 'o-', linewidth=2, markersize=6, color='blue')
+            axes[1, 0].set_title('Evaluation Reward', fontsize=12, fontweight='bold')
+            axes[1, 0].set_xlabel('Timesteps')
+            axes[1, 0].set_ylabel('Mean Eval Reward')
+            axes[1, 0].grid(True, alpha=0.3)
+            # Mark best
+            best_idx = np.argmax(rewards)
+            axes[1, 0].scatter([steps[best_idx]], [rewards[best_idx]], color='gold', s=150, zorder=5, marker='*', label=f'Best: {rewards[best_idx]:.1f}')
+            axes[1, 0].legend()
+        else:
+            axes[1, 0].text(0.5, 0.5, 'No eval data', ha='center', va='center', transform=axes[1, 0].transAxes)
+            axes[1, 0].set_title('Evaluation Reward', fontsize=12, fontweight='bold')
+
+        # 4. Eval Episode Length
+        if 'eval/mean_ep_length' in data:
+            steps, lengths = zip(*data['eval/mean_ep_length'])
+            axes[1, 1].plot(steps, lengths, 'o-', linewidth=2, markersize=6, color='orange')
+            axes[1, 1].set_title('Evaluation Episode Length', fontsize=12, fontweight='bold')
+            axes[1, 1].set_xlabel('Timesteps')
+            axes[1, 1].set_ylabel('Mean Eval Length')
+            axes[1, 1].grid(True, alpha=0.3)
+            # Mark best
+            best_idx = np.argmax(lengths)
+            axes[1, 1].scatter([steps[best_idx]], [lengths[best_idx]], color='gold', s=150, zorder=5, marker='*', label=f'Best: {lengths[best_idx]:.0f}')
+            axes[1, 1].legend()
+        else:
+            axes[1, 1].text(0.5, 0.5, 'No eval data', ha='center', va='center', transform=axes[1, 1].transAxes)
+            axes[1, 1].set_title('Evaluation Episode Length', fontsize=12, fontweight='bold')
+
+        plt.suptitle('SAC Training - Learning Curves', fontsize=14, fontweight='bold', y=0.995)
+        plt.tight_layout()
+        plt.savefig(plots_dir / 'learning_curves.png', dpi=150)
+        print(f"✓ Saved: {plots_dir / 'learning_curves.png'}")
+        plt.close()
+    else:
         print("⚠ No TensorBoard data found, skipping plots")
-        return
 
-    plots_dir = output_dir / "plots"
-    plots_dir.mkdir(parents=True, exist_ok=True)
+    # Build and save summary (always runs, even without TensorBoard data)
+    summary: Dict[str, Any] = {
+        "training_duration_seconds": training_duration_seconds,
+        "training_duration_formatted": format_duration(training_duration_seconds),
+    }
 
-    plt.style.use('seaborn-v0_8-darkgrid')
-
-    # Combined learning curves plot (2x2)
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-
-    # 1. Episode Reward
     if 'rollout/ep_rew_mean' in data:
-        steps, rewards = zip(*data['rollout/ep_rew_mean'])
-        axes[0, 0].plot(steps, rewards, linewidth=1.5, alpha=0.6, label='Raw')
-        window = min(50, max(1, len(rewards) // 10))
-        if window > 1 and len(rewards) >= window:
-            rolling_mean = np.convolve(rewards, np.ones(window)/window, mode='valid')
-            axes[0, 0].plot(steps[window-1:], rolling_mean, linewidth=2.5, color='red', label=f'Smoothed (w={window})')
-        axes[0, 0].set_title('Episode Reward', fontsize=12, fontweight='bold')
-        axes[0, 0].set_xlabel('Timesteps')
-        axes[0, 0].set_ylabel('Mean Reward')
-        axes[0, 0].legend(loc='lower right')
-        axes[0, 0].grid(True, alpha=0.3)
+        rewards = [v for _, v in data['rollout/ep_rew_mean']]
+        summary["final_reward"] = rewards[-1]
+        summary["peak_reward"] = max(rewards)
 
-    # 2. Episode Length
     if 'rollout/ep_len_mean' in data:
-        steps, lengths = zip(*data['rollout/ep_len_mean'])
-        axes[0, 1].plot(steps, lengths, linewidth=1.5, alpha=0.6, label='Raw')
-        window = min(50, max(1, len(lengths) // 10))
-        if window > 1 and len(lengths) >= window:
-            rolling_mean = np.convolve(lengths, np.ones(window)/window, mode='valid')
-            axes[0, 1].plot(steps[window-1:], rolling_mean, linewidth=2.5, color='green', label=f'Smoothed (w={window})')
-        axes[0, 1].set_title('Episode Length', fontsize=12, fontweight='bold')
-        axes[0, 1].set_xlabel('Timesteps')
-        axes[0, 1].set_ylabel('Mean Length (steps)')
-        axes[0, 1].legend(loc='lower right')
-        axes[0, 1].grid(True, alpha=0.3)
+        lengths = [v for _, v in data['rollout/ep_len_mean']]
+        summary["final_ep_length"] = lengths[-1]
+        summary["peak_ep_length"] = max(lengths)
 
-    # 3. Eval Reward (from EvalCallback)
     if 'eval/mean_reward' in data:
-        steps, rewards = zip(*data['eval/mean_reward'])
-        axes[1, 0].plot(steps, rewards, 'o-', linewidth=2, markersize=6, color='blue')
-        axes[1, 0].set_title('Evaluation Reward', fontsize=12, fontweight='bold')
-        axes[1, 0].set_xlabel('Timesteps')
-        axes[1, 0].set_ylabel('Mean Eval Reward')
-        axes[1, 0].grid(True, alpha=0.3)
-        # Mark best
-        best_idx = np.argmax(rewards)
-        axes[1, 0].scatter([steps[best_idx]], [rewards[best_idx]], color='gold', s=150, zorder=5, marker='*', label=f'Best: {rewards[best_idx]:.1f}')
-        axes[1, 0].legend()
-    else:
-        axes[1, 0].text(0.5, 0.5, 'No eval data', ha='center', va='center', transform=axes[1, 0].transAxes)
-        axes[1, 0].set_title('Evaluation Reward', fontsize=12, fontweight='bold')
+        eval_rewards = [v for _, v in data['eval/mean_reward']]
+        summary["best_eval_reward"] = max(eval_rewards)
+        summary["final_eval_reward"] = eval_rewards[-1]
 
-    # 4. Eval Episode Length
     if 'eval/mean_ep_length' in data:
-        steps, lengths = zip(*data['eval/mean_ep_length'])
-        axes[1, 1].plot(steps, lengths, 'o-', linewidth=2, markersize=6, color='orange')
-        axes[1, 1].set_title('Evaluation Episode Length', fontsize=12, fontweight='bold')
-        axes[1, 1].set_xlabel('Timesteps')
-        axes[1, 1].set_ylabel('Mean Eval Length')
-        axes[1, 1].grid(True, alpha=0.3)
-        # Mark best
-        best_idx = np.argmax(lengths)
-        axes[1, 1].scatter([steps[best_idx]], [lengths[best_idx]], color='gold', s=150, zorder=5, marker='*', label=f'Best: {lengths[best_idx]:.0f}')
-        axes[1, 1].legend()
-    else:
-        axes[1, 1].text(0.5, 0.5, 'No eval data', ha='center', va='center', transform=axes[1, 1].transAxes)
-        axes[1, 1].set_title('Evaluation Episode Length', fontsize=12, fontweight='bold')
+        eval_lengths = [v for _, v in data['eval/mean_ep_length']]
+        summary["best_eval_ep_length"] = max(eval_lengths)
+        summary["final_eval_ep_length"] = eval_lengths[-1]
 
-    plt.suptitle('SAC Training - Learning Curves', fontsize=14, fontweight='bold', y=0.995)
-    plt.tight_layout()
-    plt.savefig(plots_dir / 'learning_curves.png', dpi=150)
-    print(f"✓ Saved: {plots_dir / 'learning_curves.png'}")
-    plt.close()
+    # Save summary to JSON
+    summary_path = output_dir / "training_summary.json"
+    with open(summary_path, 'w') as f:
+        json.dump(summary, f, indent=2)
+    print(f"✓ Saved: {summary_path}")
 
     # Print summary statistics
     print("\n" + "=" * 50)
     print("Training Summary")
     print("=" * 50)
+    print(f"Duration:        {summary['training_duration_formatted']}")
 
-    if 'rollout/ep_rew_mean' in data:
-        rewards = [v for _, v in data['rollout/ep_rew_mean']]
-        print(f"Final reward:    {rewards[-1]:.2f}")
-        print(f"Peak reward:     {max(rewards):.2f}")
+    if 'final_reward' in summary:
+        print(f"Final reward:    {summary['final_reward']:.2f}")
+        print(f"Peak reward:     {summary['peak_reward']:.2f}")
 
-    if 'rollout/ep_len_mean' in data:
-        lengths = [v for _, v in data['rollout/ep_len_mean']]
-        print(f"Final ep length: {lengths[-1]:.0f}")
-        print(f"Peak ep length:  {max(lengths):.0f}")
+    if 'final_ep_length' in summary:
+        print(f"Final ep length: {summary['final_ep_length']:.0f}")
+        print(f"Peak ep length:  {summary['peak_ep_length']:.0f}")
 
-    if 'eval/mean_reward' in data:
-        eval_rewards = [v for _, v in data['eval/mean_reward']]
-        print(f"Best eval reward: {max(eval_rewards):.2f}")
-        print(f"Final eval reward: {eval_rewards[-1]:.2f}")
+    if 'best_eval_reward' in summary:
+        print(f"Best eval reward: {summary['best_eval_reward']:.2f}")
+        print(f"Final eval reward: {summary['final_eval_reward']:.2f}")
 
     print("=" * 50)
 
@@ -335,7 +381,9 @@ def train(
         resume_path: Path to existing run directory to resume training from
     """
     # Handle resume vs new run
-    if resume_path:
+    resume_from_zip = resume_path and Path(resume_path).suffix == ".zip"
+    if resume_path and not resume_from_zip:
+        # Resume from existing run directory
         run_dir = Path(resume_path)
         if not run_dir.exists():
             print(f"Error: Resume path not found: {resume_path}")
@@ -344,7 +392,7 @@ def train(
         log_path = run_dir / "logs"
         print(f"Resuming training from: {run_dir}")
     else:
-        # Create timestamped run directory
+        # Create timestamped run directory (new run, or resuming from .zip file)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         # Determine config name for directory structure
@@ -360,6 +408,10 @@ def train(
         save_path.mkdir(parents=True, exist_ok=True)
         log_path.mkdir(parents=True, exist_ok=True)
 
+        if resume_from_zip:
+            print(f"Loading weights from: {resume_path}")
+            print(f"New run directory:   {run_dir}")
+
     # Get SAC-specific parameters with defaults
     buffer_size = getattr(config, 'buffer_size', 1_000_000)
     learning_starts = getattr(config, 'learning_starts', 10000)
@@ -374,7 +426,7 @@ def train(
     print("=" * 70)
     print(f"Run directory:       {run_dir}")
     print(f"Config:              {config_name if config_name else 'CLI arguments'}")
-    if not resume_path:
+    if not resume_path or resume_from_zip:
         print(f"Timestamp:           {timestamp}")
     print()
     print(f"Total timesteps:     {config.total_timesteps:,}")
@@ -653,8 +705,8 @@ def train(
 
     callbacks = [checkpoint_callback, eval_callback, cleanup_callback]
 
-    # Save config to run directory for reproducibility (only on new runs)
-    if not resume_path:
+    # Save config to run directory for reproducibility (new runs or resuming from .zip)
+    if not resume_path or resume_from_zip:
         config.to_yaml(str(run_dir / "config.yaml"))
         print(f"✓ Config saved to {run_dir / 'config.yaml'}")
 
@@ -665,6 +717,7 @@ def train(
         print("Note: Resuming from checkpoint, total_timesteps is ADDITIONAL steps to train")
     print()
 
+    training_start_time = time.time()
     try:
         model.learn(
             total_timesteps=config.total_timesteps,
@@ -675,6 +728,8 @@ def train(
     except KeyboardInterrupt:
         print("\n\nTraining interrupted by user")
     finally:
+        training_duration = time.time() - training_start_time
+
         # Save final model
         final_path = save_path / "final_model"
         model.save(final_path)
@@ -692,8 +747,8 @@ def train(
     env.close()
     eval_env.close()
 
-    # Plot learning curves
-    plot_learning_curves(log_path, run_dir)
+    # Plot learning curves and save summary
+    plot_learning_curves(log_path, run_dir, training_duration)
 
 
 def main() -> None:
@@ -769,7 +824,9 @@ Examples:
     if args.n_envs is not None:
         config.n_envs = args.n_envs
 
-    train(config, config_name=config_name, resume_path=args.resume)
+    # Use CLI --resume if provided, otherwise fall back to config.resume_path
+    resume_path = args.resume or config.resume_path
+    train(config, config_name=config_name, resume_path=resume_path)
 
 
 if __name__ == "__main__":

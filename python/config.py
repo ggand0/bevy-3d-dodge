@@ -67,6 +67,7 @@ class TrainingConfig:
     # Paths
     save_dir: str = "models"
     log_dir: str = "logs"
+    resume_path: Optional[str] = None  # Path to checkpoint (.zip) to resume training from
 
     @classmethod
     def from_yaml(cls, yaml_path: str) -> "TrainingConfig":
