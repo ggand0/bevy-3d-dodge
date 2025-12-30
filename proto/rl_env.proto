@@ -76,6 +76,18 @@ message ConfigureRequest {
   optional uint32 image_obs_width = 7;
   optional uint32 image_obs_height = 8;
   optional bool image_grayscale = 9;
+
+  // Reward parameters
+  optional float collision_penalty = 10;       // Death penalty (default: -100.0)
+  optional float survival_reward = 11;         // Per-step survival reward (default: 1.0)
+  optional float dodge_bonus_threshold = 12;   // Distance threshold for dodge bonus (default: 2.0)
+  optional float dodge_bonus_multiplier = 13;  // Multiplier for dodge bonus (default: 0.5)
+
+  // Level parameters (override level defaults)
+  optional float projectile_speed = 14;        // Projectile speed (Level1: 3.0, Level2: 4.5)
+  optional float projectile_spawn_interval = 15; // Spawn interval in seconds (Level1: 2.0, Level2: 0.5)
+  optional uint32 max_projectiles = 16;        // Max projectiles on field (Level1: 10, Level2: 25)
+  optional float player_speed = 17;            // Player base speed (default: 5.0)
 }
 
 message ConfigureResponse {}

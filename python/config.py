@@ -64,6 +64,18 @@ class TrainingConfig:
     # Image observation settings
     image_grayscale: Optional[bool] = None  # If True, use grayscale (1 channel) instead of RGB (3 channels). None = RGB
 
+    # Reward parameters (override defaults)
+    collision_penalty: Optional[float] = None  # Death penalty (default: -100.0)
+    survival_reward: Optional[float] = None  # Per-step survival reward (default: 1.0)
+    dodge_bonus_threshold: Optional[float] = None  # Distance threshold for dodge bonus (default: 2.0)
+    dodge_bonus_multiplier: Optional[float] = None  # Multiplier for dodge bonus (default: 0.5)
+
+    # Level parameters (override level defaults)
+    projectile_speed: Optional[float] = None  # Projectile speed (Level1: 3.0, Level2: 4.5)
+    projectile_spawn_interval: Optional[float] = None  # Spawn interval in seconds (Level1: 2.0, Level2: 0.5)
+    max_projectiles: Optional[int] = None  # Max projectiles on field (Level1: 10, Level2: 25)
+    player_speed: Optional[float] = None  # Player base speed (default: 5.0)
+
     # Paths
     save_dir: str = "models"
     log_dir: str = "logs"

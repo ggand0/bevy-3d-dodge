@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use crate::config::GameConfig;
 use crate::game::collision::GameState;
 use crate::game::player::Player;
 use crate::game::projectile::Projectile;
@@ -35,19 +36,20 @@ pub struct StepInfo {
     pub projectile_count: usize,
 }
 
-/// Calculate reward for current timestep
+/// Calculate reward for current timestep using configurable parameters
 pub fn calculate_reward(
     game_state: &GameState,
     player_query: &Query<&Transform, With<Player>>,
     projectile_query: &Query<&Transform, With<Projectile>>,
+    config: &GameConfig,
 ) -> f32 {
     // Collision penalty (terminal state)
     if game_state.is_game_over {
-        return -100.0;
+        return config.collision_penalty;
     }
 
     // Base survival reward
-    let mut reward = 1.0;
+    let mut reward = config.survival_reward;
 
     if let Ok(player_transform) = player_query.get_single() {
         let player_pos = player_transform.translation;
@@ -61,9 +63,9 @@ pub fn calculate_reward(
             .min_by(|a, b| a.partial_cmp(b).unwrap())
             .unwrap_or(f32::MAX);
 
-        // Bonus for close dodges (distance < 2.0 units)
-        if min_distance < 2.0 {
-            reward += (2.0 - min_distance) * 0.5;
+        // Bonus for close dodges (distance < threshold)
+        if min_distance < config.dodge_bonus_threshold {
+            reward += (config.dodge_bonus_threshold - min_distance) * config.dodge_bonus_multiplier;
         }
     }
 
@@ -103,11 +105,12 @@ mod tests {
     #[test]
     fn test_reward_collision() {
         let game_state = GameState { is_game_over: true };
+        let config = GameConfig::default();
         let mut world = World::new();
         let player_query = world.query::<&Transform, With<Player>>();
         let projectile_query = world.query::<&Transform, With<Projectile>>();
 
-        let reward = calculate_reward(&game_state, &player_query, &projectile_query);
-        assert_eq!(reward, -100.0);
+        let reward = calculate_reward(&game_state, &player_query, &projectile_query, &config);
+        assert_eq!(reward, config.collision_penalty);
     }
 }

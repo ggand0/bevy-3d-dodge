@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0crl_env.proto\x12\x06rl_env\"K\n\x10ObservationSpace\x12\r\n\x05shape\x18\x01 \x03(\x05\x12\r\n\x05\x64type\x18\x02 \x01(\t\x12\x0b\n\x03low\x18\x03 \x01(\x02\x12\x0c\n\x04high\x18\x04 \x01(\x02\"g\n\x0b\x41\x63tionSpace\x12)\n\x08\x64iscrete\x18\x01 \x01(\x0b\x32\x15.rl_env.DiscreteSpaceH\x00\x12\x1f\n\x03\x62ox\x18\x02 \x01(\x0b\x32\x10.rl_env.BoxSpaceH\x00\x42\x0c\n\nspace_type\"\x1a\n\rDiscreteSpace\x12\t\n\x01n\x18\x01 \x01(\x05\"4\n\x08\x42oxSpace\x12\r\n\x05shape\x18\x01 \x03(\x05\x12\x0b\n\x03low\x18\x02 \x01(\x02\x12\x0c\n\x04high\x18\x03 \x01(\x02\"\x0e\n\x0cResetRequest\"\x9b\x01\n\rResetResponse\x12\x13\n\x0bobservation\x18\x01 \x03(\x02\x12\x19\n\x11image_observation\x18\x02 \x01(\x0c\x12-\n\x04info\x18\x03 \x03(\x0b\x32\x1f.rl_env.ResetResponse.InfoEntry\x1a+\n\tInfoEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"i\n\x0bStepRequest\x12\x19\n\x0f\x64iscrete_action\x18\x01 \x01(\x05H\x00\x12\x35\n\x11\x63ontinuous_action\x18\x02 \x01(\x0b\x32\x18.rl_env.ContinuousActionH\x00\x42\x08\n\x06\x61\x63tion\"\"\n\x10\x43ontinuousAction\x12\x0e\n\x06values\x18\x01 \x03(\x02\"\xca\x01\n\x0cStepResponse\x12\x13\n\x0bobservation\x18\x01 \x03(\x02\x12\x19\n\x11image_observation\x18\x02 \x01(\x0c\x12\x0e\n\x06reward\x18\x03 \x01(\x02\x12\x0c\n\x04\x64one\x18\x04 \x01(\x08\x12\x11\n\ttruncated\x18\x05 \x01(\x08\x12,\n\x04info\x18\x06 \x03(\x0b\x32\x1e.rl_env.StepResponse.InfoEntry\x1a+\n\tInfoEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\xe0\x03\n\x10\x43onfigureRequest\x12\x12\n\x05level\x18\x01 \x01(\x05H\x00\x88\x01\x01\x12\x1e\n\x11\x61\x63tion_space_type\x18\x02 \x01(\tH\x01\x88\x01\x01\x12\x1e\n\x11sprint_multiplier\x18\x03 \x01(\x02H\x02\x88\x01\x01\x12 \n\x13spawn_angle_degrees\x18\x04 \x01(\x02H\x03\x88\x01\x01\x12\x1d\n\x10observation_mode\x18\x05 \x01(\tH\x04\x88\x01\x01\x12\"\n\x15thrower_delay_seconds\x18\x06 \x01(\x02H\x05\x88\x01\x01\x12\x1c\n\x0fimage_obs_width\x18\x07 \x01(\rH\x06\x88\x01\x01\x12\x1d\n\x10image_obs_height\x18\x08 \x01(\rH\x07\x88\x01\x01\x12\x1c\n\x0fimage_grayscale\x18\t \x01(\x08H\x08\x88\x01\x01\x42\x08\n\x06_levelB\x14\n\x12_action_space_typeB\x14\n\x12_sprint_multiplierB\x16\n\x14_spawn_angle_degreesB\x13\n\x11_observation_modeB\x18\n\x16_thrower_delay_secondsB\x12\n\x10_image_obs_widthB\x13\n\x11_image_obs_heightB\x12\n\x10_image_grayscale\"\x13\n\x11\x43onfigureResponse\" \n\x0fSetLevelRequest\x12\r\n\x05level\x18\x01 \x01(\x05\"\x12\n\x10SetLevelResponse\"\x16\n\x14StartTrainingRequest\"\x17\n\x15StartTrainingResponse\"\x14\n\x12\x45ndTrainingRequest\"\x15\n\x13\x45ndTrainingResponse\"\x19\n\x17ObservationSpaceRequest\"\x14\n\x12\x41\x63tionSpaceRequest2\xa4\x04\n\rRlEnvironment\x12P\n\x13GetObservationSpace\x12\x1f.rl_env.ObservationSpaceRequest\x1a\x18.rl_env.ObservationSpace\x12\x41\n\x0eGetActionSpace\x12\x1a.rl_env.ActionSpaceRequest\x1a\x13.rl_env.ActionSpace\x12\x34\n\x05Reset\x12\x14.rl_env.ResetRequest\x1a\x15.rl_env.ResetResponse\x12\x31\n\x04Step\x12\x13.rl_env.StepRequest\x1a\x14.rl_env.StepResponse\x12@\n\tConfigure\x12\x18.rl_env.ConfigureRequest\x1a\x19.rl_env.ConfigureResponse\x12=\n\x08SetLevel\x12\x17.rl_env.SetLevelRequest\x1a\x18.rl_env.SetLevelResponse\x12L\n\rStartTraining\x12\x1c.rl_env.StartTrainingRequest\x1a\x1d.rl_env.StartTrainingResponse\x12\x46\n\x0b\x45ndTraining\x12\x1a.rl_env.EndTrainingRequest\x1a\x1b.rl_env.EndTrainingResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0crl_env.proto\x12\x06rl_env\"K\n\x10ObservationSpace\x12\r\n\x05shape\x18\x01 \x03(\x05\x12\r\n\x05\x64type\x18\x02 \x01(\t\x12\x0b\n\x03low\x18\x03 \x01(\x02\x12\x0c\n\x04high\x18\x04 \x01(\x02\"g\n\x0b\x41\x63tionSpace\x12)\n\x08\x64iscrete\x18\x01 \x01(\x0b\x32\x15.rl_env.DiscreteSpaceH\x00\x12\x1f\n\x03\x62ox\x18\x02 \x01(\x0b\x32\x10.rl_env.BoxSpaceH\x00\x42\x0c\n\nspace_type\"\x1a\n\rDiscreteSpace\x12\t\n\x01n\x18\x01 \x01(\x05\"4\n\x08\x42oxSpace\x12\r\n\x05shape\x18\x01 \x03(\x05\x12\x0b\n\x03low\x18\x02 \x01(\x02\x12\x0c\n\x04high\x18\x03 \x01(\x02\"\x0e\n\x0cResetRequest\"\x9b\x01\n\rResetResponse\x12\x13\n\x0bobservation\x18\x01 \x03(\x02\x12\x19\n\x11image_observation\x18\x02 \x01(\x0c\x12-\n\x04info\x18\x03 \x03(\x0b\x32\x1f.rl_env.ResetResponse.InfoEntry\x1a+\n\tInfoEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"i\n\x0bStepRequest\x12\x19\n\x0f\x64iscrete_action\x18\x01 \x01(\x05H\x00\x12\x35\n\x11\x63ontinuous_action\x18\x02 \x01(\x0b\x32\x18.rl_env.ContinuousActionH\x00\x42\x08\n\x06\x61\x63tion\"\"\n\x10\x43ontinuousAction\x12\x0e\n\x06values\x18\x01 \x03(\x02\"\xca\x01\n\x0cStepResponse\x12\x13\n\x0bobservation\x18\x01 \x03(\x02\x12\x19\n\x11image_observation\x18\x02 \x01(\x0c\x12\x0e\n\x06reward\x18\x03 \x01(\x02\x12\x0c\n\x04\x64one\x18\x04 \x01(\x08\x12\x11\n\ttruncated\x18\x05 \x01(\x08\x12,\n\x04info\x18\x06 \x03(\x0b\x32\x1e.rl_env.StepResponse.InfoEntry\x1a+\n\tInfoEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\x9e\x07\n\x10\x43onfigureRequest\x12\x12\n\x05level\x18\x01 \x01(\x05H\x00\x88\x01\x01\x12\x1e\n\x11\x61\x63tion_space_type\x18\x02 \x01(\tH\x01\x88\x01\x01\x12\x1e\n\x11sprint_multiplier\x18\x03 \x01(\x02H\x02\x88\x01\x01\x12 \n\x13spawn_angle_degrees\x18\x04 \x01(\x02H\x03\x88\x01\x01\x12\x1d\n\x10observation_mode\x18\x05 \x01(\tH\x04\x88\x01\x01\x12\"\n\x15thrower_delay_seconds\x18\x06 \x01(\x02H\x05\x88\x01\x01\x12\x1c\n\x0fimage_obs_width\x18\x07 \x01(\rH\x06\x88\x01\x01\x12\x1d\n\x10image_obs_height\x18\x08 \x01(\rH\x07\x88\x01\x01\x12\x1c\n\x0fimage_grayscale\x18\t \x01(\x08H\x08\x88\x01\x01\x12\x1e\n\x11\x63ollision_penalty\x18\n \x01(\x02H\t\x88\x01\x01\x12\x1c\n\x0fsurvival_reward\x18\x0b \x01(\x02H\n\x88\x01\x01\x12\"\n\x15\x64odge_bonus_threshold\x18\x0c \x01(\x02H\x0b\x88\x01\x01\x12#\n\x16\x64odge_bonus_multiplier\x18\r \x01(\x02H\x0c\x88\x01\x01\x12\x1d\n\x10projectile_speed\x18\x0e \x01(\x02H\r\x88\x01\x01\x12&\n\x19projectile_spawn_interval\x18\x0f \x01(\x02H\x0e\x88\x01\x01\x12\x1c\n\x0fmax_projectiles\x18\x10 \x01(\rH\x0f\x88\x01\x01\x12\x19\n\x0cplayer_speed\x18\x11 \x01(\x02H\x10\x88\x01\x01\x42\x08\n\x06_levelB\x14\n\x12_action_space_typeB\x14\n\x12_sprint_multiplierB\x16\n\x14_spawn_angle_degreesB\x13\n\x11_observation_modeB\x18\n\x16_thrower_delay_secondsB\x12\n\x10_image_obs_widthB\x13\n\x11_image_obs_heightB\x12\n\x10_image_grayscaleB\x14\n\x12_collision_penaltyB\x12\n\x10_survival_rewardB\x18\n\x16_dodge_bonus_thresholdB\x19\n\x17_dodge_bonus_multiplierB\x13\n\x11_projectile_speedB\x1c\n\x1a_projectile_spawn_intervalB\x12\n\x10_max_projectilesB\x0f\n\r_player_speed\"\x13\n\x11\x43onfigureResponse\" \n\x0fSetLevelRequest\x12\r\n\x05level\x18\x01 \x01(\x05\"\x12\n\x10SetLevelResponse\"\x16\n\x14StartTrainingRequest\"\x17\n\x15StartTrainingResponse\"\x14\n\x12\x45ndTrainingRequest\"\x15\n\x13\x45ndTrainingResponse\"\x19\n\x17ObservationSpaceRequest\"\x14\n\x12\x41\x63tionSpaceRequest2\xa4\x04\n\rRlEnvironment\x12P\n\x13GetObservationSpace\x12\x1f.rl_env.ObservationSpaceRequest\x1a\x18.rl_env.ObservationSpace\x12\x41\n\x0eGetActionSpace\x12\x1a.rl_env.ActionSpaceRequest\x1a\x13.rl_env.ActionSpace\x12\x34\n\x05Reset\x12\x14.rl_env.ResetRequest\x1a\x15.rl_env.ResetResponse\x12\x31\n\x04Step\x12\x13.rl_env.StepRequest\x1a\x14.rl_env.StepResponse\x12@\n\tConfigure\x12\x18.rl_env.ConfigureRequest\x1a\x19.rl_env.ConfigureResponse\x12=\n\x08SetLevel\x12\x17.rl_env.SetLevelRequest\x1a\x18.rl_env.SetLevelResponse\x12L\n\rStartTraining\x12\x1c.rl_env.StartTrainingRequest\x1a\x1d.rl_env.StartTrainingResponse\x12\x46\n\x0b\x45ndTraining\x12\x1a.rl_env.EndTrainingRequest\x1a\x1b.rl_env.EndTrainingResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -58,25 +58,25 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_STEPRESPONSE_INFOENTRY']._serialized_start=417
   _globals['_STEPRESPONSE_INFOENTRY']._serialized_end=460
   _globals['_CONFIGUREREQUEST']._serialized_start=811
-  _globals['_CONFIGUREREQUEST']._serialized_end=1291
-  _globals['_CONFIGURERESPONSE']._serialized_start=1293
-  _globals['_CONFIGURERESPONSE']._serialized_end=1312
-  _globals['_SETLEVELREQUEST']._serialized_start=1314
-  _globals['_SETLEVELREQUEST']._serialized_end=1346
-  _globals['_SETLEVELRESPONSE']._serialized_start=1348
-  _globals['_SETLEVELRESPONSE']._serialized_end=1366
-  _globals['_STARTTRAININGREQUEST']._serialized_start=1368
-  _globals['_STARTTRAININGREQUEST']._serialized_end=1390
-  _globals['_STARTTRAININGRESPONSE']._serialized_start=1392
-  _globals['_STARTTRAININGRESPONSE']._serialized_end=1415
-  _globals['_ENDTRAININGREQUEST']._serialized_start=1417
-  _globals['_ENDTRAININGREQUEST']._serialized_end=1437
-  _globals['_ENDTRAININGRESPONSE']._serialized_start=1439
-  _globals['_ENDTRAININGRESPONSE']._serialized_end=1460
-  _globals['_OBSERVATIONSPACEREQUEST']._serialized_start=1462
-  _globals['_OBSERVATIONSPACEREQUEST']._serialized_end=1487
-  _globals['_ACTIONSPACEREQUEST']._serialized_start=1489
-  _globals['_ACTIONSPACEREQUEST']._serialized_end=1509
-  _globals['_RLENVIRONMENT']._serialized_start=1512
-  _globals['_RLENVIRONMENT']._serialized_end=2060
+  _globals['_CONFIGUREREQUEST']._serialized_end=1737
+  _globals['_CONFIGURERESPONSE']._serialized_start=1739
+  _globals['_CONFIGURERESPONSE']._serialized_end=1758
+  _globals['_SETLEVELREQUEST']._serialized_start=1760
+  _globals['_SETLEVELREQUEST']._serialized_end=1792
+  _globals['_SETLEVELRESPONSE']._serialized_start=1794
+  _globals['_SETLEVELRESPONSE']._serialized_end=1812
+  _globals['_STARTTRAININGREQUEST']._serialized_start=1814
+  _globals['_STARTTRAININGREQUEST']._serialized_end=1836
+  _globals['_STARTTRAININGRESPONSE']._serialized_start=1838
+  _globals['_STARTTRAININGRESPONSE']._serialized_end=1861
+  _globals['_ENDTRAININGREQUEST']._serialized_start=1863
+  _globals['_ENDTRAININGREQUEST']._serialized_end=1883
+  _globals['_ENDTRAININGRESPONSE']._serialized_start=1885
+  _globals['_ENDTRAININGRESPONSE']._serialized_end=1906
+  _globals['_OBSERVATIONSPACEREQUEST']._serialized_start=1908
+  _globals['_OBSERVATIONSPACEREQUEST']._serialized_end=1933
+  _globals['_ACTIONSPACEREQUEST']._serialized_start=1935
+  _globals['_ACTIONSPACEREQUEST']._serialized_end=1955
+  _globals['_RLENVIRONMENT']._serialized_start=1958
+  _globals['_RLENVIRONMENT']._serialized_end=2506
 # @@protoc_insertion_point(module_scope)

@@ -333,6 +333,16 @@ class BevyDodgeEnv(gym.Env):
         image_obs_width: Optional[int] = None,
         image_obs_height: Optional[int] = None,
         image_grayscale: Optional[bool] = None,
+        # Reward parameters
+        collision_penalty: Optional[float] = None,
+        survival_reward: Optional[float] = None,
+        dodge_bonus_threshold: Optional[float] = None,
+        dodge_bonus_multiplier: Optional[float] = None,
+        # Level parameters
+        projectile_speed: Optional[float] = None,
+        projectile_spawn_interval: Optional[float] = None,
+        max_projectiles: Optional[int] = None,
+        player_speed: Optional[float] = None,
     ) -> None:
         """Configure game settings.
 
@@ -346,6 +356,14 @@ class BevyDodgeEnv(gym.Env):
             image_obs_width: Optional image observation width (32-512)
             image_obs_height: Optional image observation height (32-512)
             image_grayscale: Optional grayscale mode (True for 1 channel, False for 3 RGB channels)
+            collision_penalty: Optional death penalty (default: -100.0)
+            survival_reward: Optional per-step survival reward (default: 1.0)
+            dodge_bonus_threshold: Optional distance threshold for dodge bonus (default: 2.0)
+            dodge_bonus_multiplier: Optional multiplier for dodge bonus (default: 0.5)
+            projectile_speed: Optional projectile speed (Level1: 3.0, Level2: 4.5)
+            projectile_spawn_interval: Optional spawn interval in seconds (Level1: 2.0, Level2: 0.5)
+            max_projectiles: Optional max projectiles on field (Level1: 10, Level2: 25)
+            player_speed: Optional player base speed (default: 5.0)
 
         Note:
             - This is the preferred way to configure the game before training
@@ -359,7 +377,8 @@ class BevyDodgeEnv(gym.Env):
             >>> env.configure(action_space_type="basic_3d", sprint_multiplier=2.0, spawn_angle_degrees=30)
             >>> env.reset()  # Ensures config is synced
         """
-        if all(p is None for p in [level, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds, image_obs_width, image_obs_height, image_grayscale]):
+        all_params = [level, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds, image_obs_width, image_obs_height, image_grayscale, collision_penalty, survival_reward, dodge_bonus_threshold, dodge_bonus_multiplier, projectile_speed, projectile_spawn_interval, max_projectiles, player_speed]
+        if all(p is None for p in all_params):
             raise ValueError("At least one configuration parameter must be provided")
 
         if level is not None and level not in (1, 2):
@@ -392,6 +411,14 @@ class BevyDodgeEnv(gym.Env):
                     image_obs_width=image_obs_width,
                     image_obs_height=image_obs_height,
                     image_grayscale=image_grayscale,
+                    collision_penalty=collision_penalty,
+                    survival_reward=survival_reward,
+                    dodge_bonus_threshold=dodge_bonus_threshold,
+                    dodge_bonus_multiplier=dodge_bonus_multiplier,
+                    projectile_speed=projectile_speed,
+                    projectile_spawn_interval=projectile_spawn_interval,
+                    max_projectiles=max_projectiles,
+                    player_speed=player_speed,
                 )
             except Exception as e:
                 raise RuntimeError(f"Failed to configure game: {e}") from e
@@ -415,6 +442,22 @@ class BevyDodgeEnv(gym.Env):
                 config_data["image_obs_height"] = image_obs_height
             if image_grayscale is not None:
                 config_data["image_grayscale"] = image_grayscale
+            if collision_penalty is not None:
+                config_data["collision_penalty"] = collision_penalty
+            if survival_reward is not None:
+                config_data["survival_reward"] = survival_reward
+            if dodge_bonus_threshold is not None:
+                config_data["dodge_bonus_threshold"] = dodge_bonus_threshold
+            if dodge_bonus_multiplier is not None:
+                config_data["dodge_bonus_multiplier"] = dodge_bonus_multiplier
+            if projectile_speed is not None:
+                config_data["projectile_speed"] = projectile_speed
+            if projectile_spawn_interval is not None:
+                config_data["projectile_spawn_interval"] = projectile_spawn_interval
+            if max_projectiles is not None:
+                config_data["max_projectiles"] = max_projectiles
+            if player_speed is not None:
+                config_data["player_speed"] = player_speed
 
             try:
                 response = requests.post(

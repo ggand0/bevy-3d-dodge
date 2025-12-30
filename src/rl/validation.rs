@@ -95,3 +95,101 @@ pub fn validate_image_dimension(dim: u32, name: &str) -> ValidationResult<()> {
     }
     Ok(())
 }
+
+// ============================================================================
+// Reward Parameter Validation
+// ============================================================================
+
+/// Validate collision penalty (must be negative or zero)
+pub fn validate_collision_penalty(penalty: f32) -> ValidationResult<()> {
+    if penalty > 0.0 {
+        return Err(ValidationError::new(format!(
+            "Invalid collision_penalty: {}. Must be <= 0 (negative penalty)",
+            penalty
+        )));
+    }
+    Ok(())
+}
+
+/// Validate survival reward (can be any value, but typically positive)
+pub fn validate_survival_reward(reward: f32) -> ValidationResult<()> {
+    // No strict validation - allow any value for experimentation
+    // Just warn if it's negative (unusual)
+    if reward < -100.0 || reward > 100.0 {
+        return Err(ValidationError::new(format!(
+            "Invalid survival_reward: {}. Must be between -100 and 100",
+            reward
+        )));
+    }
+    Ok(())
+}
+
+/// Validate dodge bonus threshold (must be positive)
+pub fn validate_dodge_bonus_threshold(threshold: f32) -> ValidationResult<()> {
+    if threshold <= 0.0 || threshold > 50.0 {
+        return Err(ValidationError::new(format!(
+            "Invalid dodge_bonus_threshold: {}. Must be between 0 and 50",
+            threshold
+        )));
+    }
+    Ok(())
+}
+
+/// Validate dodge bonus multiplier (can be any non-negative value)
+pub fn validate_dodge_bonus_multiplier(multiplier: f32) -> ValidationResult<()> {
+    if multiplier < 0.0 || multiplier > 100.0 {
+        return Err(ValidationError::new(format!(
+            "Invalid dodge_bonus_multiplier: {}. Must be between 0 and 100",
+            multiplier
+        )));
+    }
+    Ok(())
+}
+
+// ============================================================================
+// Level Parameter Validation
+// ============================================================================
+
+/// Validate projectile speed (must be positive)
+pub fn validate_projectile_speed(speed: f32) -> ValidationResult<()> {
+    if speed <= 0.0 || speed > 50.0 {
+        return Err(ValidationError::new(format!(
+            "Invalid projectile_speed: {}. Must be between 0 and 50",
+            speed
+        )));
+    }
+    Ok(())
+}
+
+/// Validate projectile spawn interval (must be positive)
+pub fn validate_projectile_spawn_interval(interval: f32) -> ValidationResult<()> {
+    if interval <= 0.0 || interval > 60.0 {
+        return Err(ValidationError::new(format!(
+            "Invalid projectile_spawn_interval: {}. Must be between 0 and 60 seconds",
+            interval
+        )));
+    }
+    Ok(())
+}
+
+/// Validate max projectiles (must be positive, reasonable limit)
+pub fn validate_max_projectiles(max: u32) -> ValidationResult<()> {
+    if max == 0 || max > 1000 {
+        return Err(ValidationError::new(format!(
+            "Invalid max_projectiles: {}. Must be between 1 and 1000",
+            max
+        )));
+    }
+    Ok(())
+}
+
+/// Validate player speed (must be positive)
+pub fn validate_player_speed(speed: f32) -> ValidationResult<()> {
+    if speed <= 0.0 || speed > 50.0 {
+        return Err(ValidationError::new(format!(
+            "Invalid player_speed: {}. Must be between 0 and 50",
+            speed
+        )));
+    }
+    Ok(())
+}

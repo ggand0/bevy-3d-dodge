@@ -15,9 +15,12 @@ use tower_http::cors::{Any, CorsLayer};
 use crate::config::{IMAGE_OBS_WIDTH, IMAGE_OBS_HEIGHT, IMAGE_OBS_CHANNELS, ObservationMode};
 use crate::rl::observation::OBSERVATION_SIZE;
 use crate::rl::validation::{
-    validate_action_space_type, validate_image_dimension, validate_level,
-    validate_observation_mode, validate_spawn_angle, validate_sprint_multiplier,
-    validate_thrower_delay, ValidationError,
+    validate_action_space_type, validate_collision_penalty, validate_dodge_bonus_multiplier,
+    validate_dodge_bonus_threshold, validate_image_dimension, validate_level,
+    validate_max_projectiles, validate_observation_mode, validate_player_speed,
+    validate_projectile_spawn_interval, validate_projectile_speed, validate_spawn_angle,
+    validate_sprint_multiplier, validate_survival_reward, validate_thrower_delay,
+    ValidationError,
 };
 
 /// Shared state between Axum server and Bevy game loop
@@ -67,6 +70,16 @@ pub enum EnvCommand {
         image_obs_width: Option<u32>,
         image_obs_height: Option<u32>,
         image_grayscale: Option<bool>,
+        // Reward parameters
+        collision_penalty: Option<f32>,
+        survival_reward: Option<f32>,
+        dodge_bonus_threshold: Option<f32>,
+        dodge_bonus_multiplier: Option<f32>,
+        // Level parameters
+        projectile_speed: Option<f32>,
+        projectile_spawn_interval: Option<f32>,
+        max_projectiles: Option<u32>,
+        player_speed: Option<f32>,
     },
 }
 
@@ -103,6 +116,16 @@ struct ConfigureRequest {
     image_obs_width: Option<u32>,  // Image observation width (default 84)
     image_obs_height: Option<u32>,  // Image observation height (default 84)
     image_grayscale: Option<bool>,  // If true, use grayscale (1 channel) instead of RGB (3 channels)
+    // Reward parameters
+    collision_penalty: Option<f32>,       // Death penalty (default: -100.0)
+    survival_reward: Option<f32>,         // Per-step survival reward (default: 1.0)
+    dodge_bonus_threshold: Option<f32>,   // Distance threshold for dodge bonus (default: 2.0)
+    dodge_bonus_multiplier: Option<f32>,  // Multiplier for dodge bonus (default: 0.5)
+    // Level parameters
+    projectile_speed: Option<f32>,        // Projectile speed
+    projectile_spawn_interval: Option<f32>, // Spawn interval in seconds
+    max_projectiles: Option<u32>,         // Max projectiles on field
+    player_speed: Option<f32>,            // Player base speed
 }
 
 #[derive(Serialize)]
@@ -465,6 +488,32 @@ async fn configure_handler(
     if let Some(height) = payload.image_obs_height {
         validate_image_dimension(height, "image_obs_height")?;
     }
+    // Validate reward parameters
+    if let Some(penalty) = payload.collision_penalty {
+        validate_collision_penalty(penalty)?;
+    }
+    if let Some(reward) = payload.survival_reward {
+        validate_survival_reward(reward)?;
+    }
+    if let Some(threshold) = payload.dodge_bonus_threshold {
+        validate_dodge_bonus_threshold(threshold)?;
+    }
+    if let Some(multiplier) = payload.dodge_bonus_multiplier {
+        validate_dodge_bonus_multiplier(multiplier)?;
+    }
+    // Validate level parameters
+    if let Some(speed) = payload.projectile_speed {
+        validate_projectile_speed(speed)?;
+    }
+    if let Some(interval) = payload.projectile_spawn_interval {
+        validate_projectile_spawn_interval(interval)?;
+    }
+    if let Some(max) = payload.max_projectiles {
+        validate_max_projectiles(max)?;
+    }
+    if let Some(speed) = payload.player_speed {
+        validate_player_speed(speed)?;
+    }
 
     state
         .command_tx
@@ -478,6 +527,14 @@ async fn configure_handler(
             image_obs_width: payload.image_obs_width,
             image_obs_height: payload.image_obs_height,
             image_grayscale: payload.image_grayscale,
+            collision_penalty: payload.collision_penalty,
+            survival_reward: payload.survival_reward,
+            dodge_bonus_threshold: payload.dodge_bonus_threshold,
+            dodge_bonus_multiplier: payload.dodge_bonus_multiplier,
+            projectile_speed: payload.projectile_speed,
+            projectile_spawn_interval: payload.projectile_spawn_interval,
+            max_projectiles: payload.max_projectiles,
+            player_speed: payload.player_speed,
         })
         .map_err(|_| AppError::InternalError("Failed to send configure command".to_string()))?;
 

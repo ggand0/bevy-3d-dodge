@@ -960,7 +960,7 @@ fn handle_rl_commands(
                 // Increment step counter
                 env_state.episode_steps += 1;
             }
-            EnvCommand::Configure { level: level_num, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds, image_obs_width, image_obs_height, image_grayscale } => {
+            EnvCommand::Configure { level: level_num, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds, image_obs_width, image_obs_height, image_grayscale, collision_penalty, survival_reward, dodge_bonus_threshold, dodge_bonus_multiplier, projectile_speed, projectile_spawn_interval, max_projectiles, player_speed } => {
                 // Update level if provided
                 if let Some(level_num) = level_num {
                     let new_level = match level_num {
@@ -1041,6 +1041,44 @@ fn handle_rl_commands(
                 if let Some(grayscale) = image_grayscale {
                     config.image_grayscale = grayscale;
                     info!("Image grayscale mode set to: {}", grayscale);
+                }
+
+                // Update reward parameters if provided
+                if let Some(penalty) = collision_penalty {
+                    config.collision_penalty = penalty;
+                    info!("Collision penalty set to: {}", penalty);
+                }
+                if let Some(reward) = survival_reward {
+                    config.survival_reward = reward;
+                    info!("Survival reward set to: {}", reward);
+                }
+                if let Some(threshold) = dodge_bonus_threshold {
+                    config.dodge_bonus_threshold = threshold;
+                    info!("Dodge bonus threshold set to: {}", threshold);
+                }
+                if let Some(multiplier) = dodge_bonus_multiplier {
+                    config.dodge_bonus_multiplier = multiplier;
+                    info!("Dodge bonus multiplier set to: {}", multiplier);
+                }
+
+                // Update level parameters if provided (override level defaults)
+                if let Some(speed) = projectile_speed {
+                    config.projectile_speed = speed;
+                    info!("Projectile speed set to: {}", speed);
+                }
+                if let Some(interval) = projectile_spawn_interval {
+                    config.projectile_spawn_interval = interval;
+                    projectile_timer.timer.set_duration(std::time::Duration::from_secs_f32(interval));
+                    projectile_timer.timer.reset();
+                    info!("Projectile spawn interval set to: {}s", interval);
+                }
+                if let Some(max) = max_projectiles {
+                    config.max_projectiles = max as usize;
+                    info!("Max projectiles set to: {}", max);
+                }
+                if let Some(speed) = player_speed {
+                    config.player_speed = speed;
+                    info!("Player speed set to: {}", speed);
                 }
 
                 // Sync shared config for API server
@@ -1166,8 +1204,8 @@ fn update_rl_state(
         drop(image_buffer); // Release lock explicitly
     }
 
-    // Calculate reward
-    let reward = rl::environment::calculate_reward(&game_state, &player_transform_query, &projectile_transform_query);
+    // Calculate reward using configurable parameters
+    let reward = rl::environment::calculate_reward(&game_state, &player_transform_query, &projectile_transform_query, &game_config);
 
     env_state.last_reward = reward;
     env_state.total_reward += reward;
@@ -1294,7 +1332,7 @@ fn handle_rl_commands_headless(
                 }
                 env_state.episode_steps += 1;
             }
-            EnvCommand::Configure { level: level_num, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds, image_obs_width, image_obs_height, image_grayscale } => {
+            EnvCommand::Configure { level: level_num, action_space_type, sprint_multiplier, spawn_angle_degrees, observation_mode, thrower_delay_seconds, image_obs_width, image_obs_height, image_grayscale, collision_penalty, survival_reward, dodge_bonus_threshold, dodge_bonus_multiplier, projectile_speed, projectile_spawn_interval, max_projectiles, player_speed } => {
                 if let Some(level_num) = level_num {
                     let new_level = match level_num {
                         1 => Level::Level1,
@@ -1370,6 +1408,44 @@ fn handle_rl_commands_headless(
                 if let Some(grayscale) = image_grayscale {
                     config.image_grayscale = grayscale;
                     info!("Image grayscale mode set to: {}", grayscale);
+                }
+
+                // Update reward parameters if provided
+                if let Some(penalty) = collision_penalty {
+                    config.collision_penalty = penalty;
+                    info!("Collision penalty set to: {}", penalty);
+                }
+                if let Some(reward) = survival_reward {
+                    config.survival_reward = reward;
+                    info!("Survival reward set to: {}", reward);
+                }
+                if let Some(threshold) = dodge_bonus_threshold {
+                    config.dodge_bonus_threshold = threshold;
+                    info!("Dodge bonus threshold set to: {}", threshold);
+                }
+                if let Some(multiplier) = dodge_bonus_multiplier {
+                    config.dodge_bonus_multiplier = multiplier;
+                    info!("Dodge bonus multiplier set to: {}", multiplier);
+                }
+
+                // Update level parameters if provided (override level defaults)
+                if let Some(speed) = projectile_speed {
+                    config.projectile_speed = speed;
+                    info!("Projectile speed set to: {}", speed);
+                }
+                if let Some(interval) = projectile_spawn_interval {
+                    config.projectile_spawn_interval = interval;
+                    projectile_timer.timer.set_duration(std::time::Duration::from_secs_f32(interval));
+                    projectile_timer.timer.reset();
+                    info!("Projectile spawn interval set to: {}s", interval);
+                }
+                if let Some(max) = max_projectiles {
+                    config.max_projectiles = max as usize;
+                    info!("Max projectiles set to: {}", max);
+                }
+                if let Some(speed) = player_speed {
+                    config.player_speed = speed;
+                    info!("Player speed set to: {}", speed);
                 }
 
                 let mut shared = shared_config.0.blocking_lock();
