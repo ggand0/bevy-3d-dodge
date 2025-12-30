@@ -13,8 +13,8 @@ action_space_type: basic_3d  # 3D: [vx, vy, sprint] - SAC requires continuous
 # Vector observation mode (MLP)
 observation_mode: with_thrower    # 69-dim vector (includes thrower position)
 
-# Training - 2M steps
-total_timesteps: 2000000  # 2M steps
+# Training - 4M steps (overnight run)
+total_timesteps: 4000000  # 4M steps
 learning_rate: 0.0003     # SAC default
 
 # SAC-specific parameters

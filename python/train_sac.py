@@ -396,11 +396,13 @@ def train(
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         # Determine config name for directory structure
+        # Use project root for results (one level up from python/)
+        project_root = Path(__file__).parent.parent
         if config_name:
             config_basename = Path(config_name).stem
-            run_dir = Path("results") / config_basename / timestamp
+            run_dir = project_root / "results" / config_basename / timestamp
         else:
-            run_dir = Path("results") / "sac_cli" / timestamp
+            run_dir = project_root / "results" / "sac_cli" / timestamp
 
         # Create subdirectories for models and logs
         save_path = run_dir / "models"
