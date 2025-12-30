@@ -16,8 +16,8 @@ spawn_angle_degrees: 180      # ±180° = 360° full circle
 # Observation mode
 observation_mode: with_thrower    # 69-dim vector
 
-# Training - 2M steps baseline
-total_timesteps: 2000000
+# Training - 4M steps for harder 360° coverage
+total_timesteps: 4000000
 learning_rate: 0.0003
 
 # SAC-specific parameters
