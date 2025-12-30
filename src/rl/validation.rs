@@ -1,4 +1,5 @@
-/// Shared validation logic for HTTP and gRPC APIs
+//! Shared validation logic for HTTP and gRPC APIs
+#![allow(clippy::manual_range_contains)]
 
 use crate::config::{ContinuousActionConfig, ObservationMode};
 
