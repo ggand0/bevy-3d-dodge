@@ -7,7 +7,9 @@ outputs/
 /assets/textures/Standard-Cube-Map*
 /assets_dev/
 /devlogs/
+docs/plans/
 models*/
+obs_dump*
 
 # Rust
 /target
