@@ -9,9 +9,12 @@ use tonic::{Request, Response, Status, transport::Server};
 use crate::config::{GameConfig, ObservationMode};
 use crate::rl::api::{EnvCommand, SharedEnvState};
 use crate::rl::validation::{
-    validate_action_space_type, validate_image_dimension, validate_level,
-    validate_observation_mode, validate_spawn_angle, validate_sprint_multiplier,
-    validate_thrower_delay, ValidationError,
+    validate_action_space_type, validate_collision_penalty, validate_dodge_bonus_multiplier,
+    validate_dodge_bonus_threshold, validate_image_dimension, validate_level,
+    validate_max_projectiles, validate_observation_mode, validate_player_speed,
+    validate_projectile_spawn_interval, validate_projectile_speed, validate_spawn_angle,
+    validate_sprint_multiplier, validate_survival_reward, validate_thrower_delay,
+    ValidationError,
 };
 
 // Include generated protobuf code
@@ -309,6 +312,32 @@ impl RlEnvironment for GrpcEnvService {
         if let Some(height) = req.image_obs_height {
             validate_image_dimension(height, "image_obs_height")?;
         }
+        // Validate reward parameters
+        if let Some(penalty) = req.collision_penalty {
+            validate_collision_penalty(penalty)?;
+        }
+        if let Some(reward) = req.survival_reward {
+            validate_survival_reward(reward)?;
+        }
+        if let Some(threshold) = req.dodge_bonus_threshold {
+            validate_dodge_bonus_threshold(threshold)?;
+        }
+        if let Some(multiplier) = req.dodge_bonus_multiplier {
+            validate_dodge_bonus_multiplier(multiplier)?;
+        }
+        // Validate level parameters
+        if let Some(speed) = req.projectile_speed {
+            validate_projectile_speed(speed)?;
+        }
+        if let Some(interval) = req.projectile_spawn_interval {
+            validate_projectile_spawn_interval(interval)?;
+        }
+        if let Some(max) = req.max_projectiles {
+            validate_max_projectiles(max)?;
+        }
+        if let Some(speed) = req.player_speed {
+            validate_player_speed(speed)?;
+        }
 
         self.command_tx
             .send(EnvCommand::Configure {
@@ -321,6 +350,14 @@ impl RlEnvironment for GrpcEnvService {
                 image_obs_width: req.image_obs_width,
                 image_obs_height: req.image_obs_height,
                 image_grayscale: req.image_grayscale,
+                collision_penalty: req.collision_penalty,
+                survival_reward: req.survival_reward,
+                dodge_bonus_threshold: req.dodge_bonus_threshold,
+                dodge_bonus_multiplier: req.dodge_bonus_multiplier,
+                projectile_speed: req.projectile_speed,
+                projectile_spawn_interval: req.projectile_spawn_interval,
+                max_projectiles: req.max_projectiles,
+                player_speed: req.player_speed,
             })
             .map_err(|_| Status::internal("Failed to send configure command"))?;
 

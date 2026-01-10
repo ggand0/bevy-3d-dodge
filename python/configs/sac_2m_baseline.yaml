@@ -1,0 +1,42 @@
+# SAC 2M Steps Baseline - Level 2 Mastery Experiment
+# Same as sac_mlp_grpc.yaml but 2x training steps
+# Goal: See if current architecture just needs more training time
+# Usage: uv run --directory python python train_sac.py --config configs/sac_2m_baseline.yaml
+
+algorithm: SAC
+transport: grpc                   # gRPC for high throughput
+socket_path: /tmp/bevy_rl.sock    # Unix socket base for gRPC
+port: 8000                        # Port for HTTP (ignored if transport=grpc)
+n_envs: 4                         # Parallel environments for higher throughput
+level: 2  # Difficulty level (1 = Baseline, 2 = Hard)
+action_space_type: basic_3d  # 3D: [vx, vy, sprint] - SAC requires continuous
+
+# Vector observation mode (MLP)
+observation_mode: with_thrower    # 69-dim vector (includes thrower position)
+
+# Training - 2M steps (2x baseline)
+total_timesteps: 2000000  # 2M steps
+learning_rate: 0.0003     # SAC default
+
+# SAC-specific parameters
+buffer_size: 100000       # Larger buffer OK for small observations (~26MB)
+learning_starts: 10000    # Steps before training starts
+batch_size: 256           # Larger batch for MLP
+tau: 0.005                # Soft update coefficient
+train_freq: 1             # Update every step (fast with MLP)
+gradient_steps: 1         # Gradient steps per environment step
+ent_coef: auto            # Automatic entropy tuning
+
+# Common parameters
+gamma: 0.99               # Discount factor
+
+# Network architecture
+net_arch: [256, 256]      # Two hidden layers (baseline)
+
+# Checkpointing & Evaluation
+save_freq: 100000         # Save every 100K steps
+eval_freq: 25000          # Evaluate every 25K steps
+n_eval_episodes: 10       # More eval episodes for stable metrics
+
+# Device
+device: auto

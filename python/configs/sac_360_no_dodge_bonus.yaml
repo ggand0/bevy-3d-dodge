@@ -1,0 +1,46 @@
+# SAC 360° Full Coverage - No Dodge Bonus
+# Tests whether close-call rewards help or hurt learning on 360°
+# Usage: uv run python python/train_sac.py --config python/configs/sac_360_no_dodge_bonus.yaml
+
+algorithm: SAC
+transport: grpc
+socket_path: /tmp/bevy_rl.sock
+n_envs: 4
+level: 2
+action_space_type: basic_3d
+
+# 360° full coverage - projectiles from any direction
+spawn_angle_degrees: 180
+
+# Observation mode
+observation_mode: with_thrower
+
+# Disable dodge bonus - pure survival reward
+dodge_bonus_multiplier: 0.0
+
+# Training - 4M steps
+total_timesteps: 4000000
+learning_rate: 0.0003
+
+# SAC-specific parameters
+buffer_size: 100000
+learning_starts: 10000
+batch_size: 256
+tau: 0.005
+train_freq: 1
+gradient_steps: 1
+ent_coef: auto
+
+# Common parameters
+gamma: 0.99
+
+# Network architecture
+net_arch: [256, 256]
+
+# Checkpointing & Evaluation
+save_freq: 100000
+eval_freq: 25000
+n_eval_episodes: 10
+
+# Device
+device: auto

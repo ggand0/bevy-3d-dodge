@@ -181,6 +181,16 @@ class GrpcEnvClient:
         image_obs_width: Optional[int] = None,
         image_obs_height: Optional[int] = None,
         image_grayscale: Optional[bool] = None,
+        # Reward parameters
+        collision_penalty: Optional[float] = None,
+        survival_reward: Optional[float] = None,
+        dodge_bonus_threshold: Optional[float] = None,
+        dodge_bonus_multiplier: Optional[float] = None,
+        # Level parameters
+        projectile_speed: Optional[float] = None,
+        projectile_spawn_interval: Optional[float] = None,
+        max_projectiles: Optional[int] = None,
+        player_speed: Optional[float] = None,
     ) -> None:
         """Configure environment settings.
 
@@ -194,6 +204,14 @@ class GrpcEnvClient:
             image_obs_width: Image observation width
             image_obs_height: Image observation height
             image_grayscale: Whether to use grayscale images
+            collision_penalty: Death penalty (default: -100.0)
+            survival_reward: Per-step survival reward (default: 1.0)
+            dodge_bonus_threshold: Distance threshold for dodge bonus (default: 2.0)
+            dodge_bonus_multiplier: Multiplier for dodge bonus (default: 0.5)
+            projectile_speed: Speed of projectiles
+            projectile_spawn_interval: Time between projectile spawns
+            max_projectiles: Maximum number of projectiles
+            player_speed: Player movement speed
         """
         request = rl_env_pb2.ConfigureRequest()
 
@@ -215,6 +233,24 @@ class GrpcEnvClient:
             request.image_obs_height = image_obs_height
         if image_grayscale is not None:
             request.image_grayscale = image_grayscale
+        # Reward parameters
+        if collision_penalty is not None:
+            request.collision_penalty = collision_penalty
+        if survival_reward is not None:
+            request.survival_reward = survival_reward
+        if dodge_bonus_threshold is not None:
+            request.dodge_bonus_threshold = dodge_bonus_threshold
+        if dodge_bonus_multiplier is not None:
+            request.dodge_bonus_multiplier = dodge_bonus_multiplier
+        # Level parameters
+        if projectile_speed is not None:
+            request.projectile_speed = projectile_speed
+        if projectile_spawn_interval is not None:
+            request.projectile_spawn_interval = projectile_spawn_interval
+        if max_projectiles is not None:
+            request.max_projectiles = max_projectiles
+        if player_speed is not None:
+            request.player_speed = player_speed
 
         self.stub.Configure(request, timeout=self.timeout)
 

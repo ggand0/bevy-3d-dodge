@@ -200,6 +200,12 @@ pub struct GameConfig {
     pub image_obs_width: u32,   // Image observation width (default 84, Atari-standard)
     pub image_obs_height: u32,  // Image observation height (default 84, Atari-standard)
     pub image_grayscale: bool,  // If true, use grayscale (1 channel) instead of RGB (3 channels)
+
+    // Reward parameters
+    pub collision_penalty: f32,       // Death penalty (default: -100.0)
+    pub survival_reward: f32,         // Per-step survival reward (default: 1.0)
+    pub dodge_bonus_threshold: f32,   // Distance threshold for dodge bonus (default: 2.0)
+    pub dodge_bonus_multiplier: f32,  // Multiplier for dodge bonus (default: 0.5)
 }
 
 impl GameConfig {
@@ -236,6 +242,11 @@ impl GameConfig {
             image_obs_width: IMAGE_OBS_WIDTH,
             image_obs_height: IMAGE_OBS_HEIGHT,
             image_grayscale: false,  // RGB by default
+            // Reward parameters (defaults)
+            collision_penalty: -100.0,
+            survival_reward: 1.0,
+            dodge_bonus_threshold: 2.0,
+            dodge_bonus_multiplier: 0.5,
         }
     }
 
@@ -258,6 +269,11 @@ impl GameConfig {
             image_obs_width: IMAGE_OBS_WIDTH,
             image_obs_height: IMAGE_OBS_HEIGHT,
             image_grayscale: false,  // RGB by default
+            // Reward parameters (defaults)
+            collision_penalty: -100.0,
+            survival_reward: 1.0,
+            dodge_bonus_threshold: 2.0,
+            dodge_bonus_multiplier: 0.5,
         }
     }
 }

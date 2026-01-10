@@ -1,0 +1,39 @@
+# SAC 3-Layer Architecture - Extended Training (4M steps)
+# Hypothesis: Deeper network needs more training time to converge
+# Usage: uv run --directory python python train_sac.py --config configs/sac_3layer_4m.yaml
+
+algorithm: SAC
+resume_path: results/sac_3layer/20251229_170537/models/final_model.zip
+transport: grpc
+socket_path: /tmp/bevy_rl.sock
+port: 8000
+n_envs: 4
+level: 2
+action_space_type: basic_3d
+
+observation_mode: with_thrower    # 69-dim vector
+
+# Training - 2M additional steps (resume from 2M checkpoint for 4M total)
+total_timesteps: 2000000
+learning_rate: 0.0003
+
+# SAC-specific parameters
+buffer_size: 100000
+learning_starts: 10000
+batch_size: 256
+tau: 0.005
+train_freq: 1
+gradient_steps: 1
+ent_coef: auto
+
+gamma: 0.99
+
+# Network architecture - 3 LAYERS (depth experiment)
+net_arch: [256, 256, 256]
+
+# Checkpointing & Evaluation
+save_freq: 100000
+eval_freq: 25000
+n_eval_episodes: 10
+
+device: auto
